@@ -1,0 +1,80 @@
+# Buffered-write benchmark
+
+This benchmark compares five spellings/implementations of the same ordered
+buffer writes, compiled by the fork to ES2022 CommonJS and run on Node:
+
+1. Ordinary `async` with an unconditional `await` at every write.
+2. Ordinary `async` with `const pending = write(...); if (pending) await pending`.
+3. Ordinary `async` with `await?` at every write.
+4. `async?` with `await?` at every write.
+5. A hand-written synchronous loop with `.then(resume)` continuations on flushes.
+
+The manual checks rely on this benchmark's precise `void | Promise<void>`
+contract. They do not implement the generic thenable probing of `await?`.
+The fifth strategy preserves synchronous returns without either new keyword;
+its layered variant illustrates the extra continuation boilerplate required.
+
+Each trial writes 100,000 records, three 16-byte writes per record (300,000
+writes / 4,800,000 bytes). The flat layout performs all writes in one function.
+The layered layout calls a separate three-write record function 100,000 times,
+consuming each completion before starting the next record. Both layouts run:
+
+- **Memory:** buffer large enough for the entire input; no flush. This measures
+  completion in memory, not durable output.
+- **Microtask:** 64 KiB buffer; each flush completes in `queueMicrotask`. This
+  isolates scheduling overhead; it does not write to an external sink.
+- **File:** 64 KiB buffer flushed with awaited `FileHandle.write` calls. Partial
+  writes are handled, and the buffer is not reused until completion. File open,
+  close, reading, and validation are outside the timer. No `fsync` is requested;
+  writes may complete into OS caches. This is not a physical-disk throughput test.
+
+All strategies use the same DataView writes and guard against buffer reuse
+while a flush is pending. Each trial verifies write and byte counts and that
+no flush remains pending. Memory trials check the stored event indices; file
+trials verify every 32-bit field of every record, after timing. Every periodic
+scenario includes draining the final partial buffer: 73 full flushes and one
+partial flush for the default workload. Setup/allocation of the main buffer,
+compilation, and verification are outside timing. Writer-created allocations,
+Promise/generator overhead, garbage collection, and waiting for flushes are
+inside timing. All returned completions are consumed.
+
+## Reproduce
+
+From the repository root:
+
+```sh
+go build -o ./tsgo ./tsc/cmd/tsc
+TSGO_BINARY="$PWD/tsgo" node tools/benchmarks/conditional-async/run.mjs results-run-1.json
+TSGO_BINARY="$PWD/tsgo" node tools/benchmarks/conditional-async/run.mjs results-run-2.json
+TSGO_BINARY="$PWD/tsgo" node tools/benchmarks/conditional-async/run.mjs results-run-3.json
+node tools/benchmarks/conditional-async/summarize.mjs results-run-1.json results-run-2.json results-run-3.json
+```
+
+`BENCH_RECORDS`, `BENCH_SAMPLES`, and `BENCH_WARMUPS` override the defaults
+100000, 9, and 3. The runner rotates strategy order each round. Each process
+warms up every strategy three times per scenario, then records nine timed
+samples. Three fresh processes produce 27 samples per strategy/scenario; the
+summary pools all samples and reports the median plus full min/max ranges.
+No samples are discarded, CPU affinity is not pinned, and GC is not forced.
+
+The checked-in results were collected on 2026-10-09, Node v24.19.0 / V8
+13.6.233.17-node.51, Linux x64, Intel Xeon Platinum 8573C, nine exposed logical
+CPUs, and an overlay filesystem. The compiler implementation is the code
+published in commit e3d0bc7a439b46a50127f709dabe27e8805fb656 (later changes before
+measurement only altered documentation/tests). Both native ordinary async and
+conditional output use the same target/compiler. The source code of the actual
+workload is [writers.ts](writers.ts); the byte writer and measurement harness
+are [run.mjs](run.mjs).
+
+[Run 1](results-run-1.json), [run 2](results-run-2.json), and
+[run 3](results-run-3.json) contain all raw measurements and environment
+metadata. [results-summary.json](results-summary.json) contains the pooled
+statistics and is reproducible with [summarize.mjs](summarize.mjs).
+
+These measurements test this transpiler prototype, not a hypothetical native
+engine implementation. There is substantial variation in the shared execution
+environment; ratios of pooled medians are descriptive, not confidence bounds.
+The data does not establish browser behavior, production storage throughput,
+or a universal speedup. In particular, the current `async?` generator lowering
+is substantially slower for many tiny record functions. No emitter optimization
+was made or hidden to obtain these results.

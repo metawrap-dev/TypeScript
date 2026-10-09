@@ -52,6 +52,88 @@ without duplicating the synchronous and asynchronous algorithms or scattering
 temporary-variable checks through every layer. This changes observable timing;
 it is not a transparent replacement for ordinary async/await.
 
+## Buffered-write measurements: benefits and prototype costs
+
+We measured the motivating pattern rather than assuming that prettier syntax
+must produce faster code. **Skipping unconditional awaits helps, but the current
+`async?` lowering does not beat manual checks or continuations.** With many tiny
+record functions, its cost outweighs the saved suspensions.
+
+Each trial writes **100,000 records / 300,000 small writes / 4.8 MB**. Periodic
+scenarios flush a **64 KiB buffer** (73 full flushes plus one final partial
+flush). The microtask sink isolates scheduling overhead; the file sink actually
+writes and verifies the complete output, without `fsync`. The in-memory case
+fits the entire input in its buffer and does not flush.
+
+**Flat writer:** one function loops over all writes. Lower times are better;
+entries are pooled medians of **27 samples across three fresh Node processes**.
+
+| Implementation | In memory, no flush | Microtask flushes | File writes |
+| --- | ---: | ---: | ---: |
+| ordinary async + await | 20.35 ms | 19.08 ms | 27.33 ms |
+| ordinary async + manual checks | 2.35 ms | 3.51 ms | 10.56 ms |
+| ordinary async + await? | 4.06 ms | 5.07 ms | 11.94 ms |
+| async? + await? | 14.65 ms | 15.46 ms | 22.44 ms |
+| manual sync continuation | 2.64 ms | 2.46 ms | 9.75 ms |
+
+**Layered writer:** the outer loop calls a separate header/payload/trailer
+function for each record. Every variant waits for completion where required;
+the byte sequence and total work are identical to the flat case.
+
+| Implementation | In memory, no flush | Microtask flushes | File writes |
+| --- | ---: | ---: | ---: |
+| ordinary async + await | 35.81 ms | 35.90 ms | 48.00 ms |
+| ordinary async + manual checks | 10.64 ms | 10.77 ms | 19.31 ms |
+| ordinary async + await? | 27.72 ms | 30.75 ms | 40.96 ms |
+| async? + await? | 155.06 ms | 150.89 ms | 179.01 ms |
+| manual sync continuation | 7.14 ms | 6.40 ms | 15.77 ms |
+
+In the flat in-memory case, ordinary `async` plus `await?` took **4.06 ms**
+versus **20.35 ms** for unconditional awaits, about **5.0× less elapsed time**.
+The existing manual checks were faster still at **2.35 ms**. `async?` plus
+`await?` took **14.65 ms**, offering synchronous return semantics at a higher
+cost than manual continuation code (**2.64 ms**).
+
+The layered in-memory case is the clearest current limitation: `async?` plus
+`await?` took **155.06 ms**, about **4.3× the elapsed time** of ordinary
+async/await (**35.81 ms**). It was also slower in both layered flush scenarios.
+This is consistent with substantial generator/runner/probe overhead for tiny
+functions; these measurements do not isolate the cost of each component.
+Ordinary async record functions still return Promises even with `await?`, so
+conditional awaiting at the outer layer cannot make that path synchronous.
+
+The result supports the motivation to avoid needless suspension and repeated
+checks, while identifying **efficient conditional-function lowering as an open
+implementation problem**. The manual continuation variant shows that the
+synchronous contract is feasible with existing JavaScript; the proposed syntax
+makes that control flow easier to author, but this prototype does not yet
+match its performance. Only `async?` and the manual continuation variant
+returned `undefined` synchronously in the no-flush trials; all strategies
+returned a Promise when a flush was required. The variants therefore share
+ordered output, not identical scheduling/API contracts.
+
+Measured on **2026-10-09**, Node **v24.19.0**, V8 **13.6.233.17-node.51**,
+Linux x64, Intel Xeon Platinum 8573C, with nine exposed logical CPUs and an
+overlay filesystem. Output target: **ES2022 CommonJS**, with all variants
+compiled by the same fork. Each process used three warmup rounds and nine
+measurement rounds per strategy/scenario, rotating order. Compilation, buffer
+setup, file open/close, and output verification were outside the timer; final
+flushes, allocations by the writers, GC, and completion waits were inside.
+
+This shared environment has substantial sample variation. For example,
+layered `async?` microtask trials ranged from **131.01 to 300.63 ms**; we kept
+all samples. The file results include OS caching and do not measure durable
+physical-disk throughput. These are synthetic buffered-writing workloads,
+not a browser benchmark, a full application workload, or a prediction of native
+engine performance. We request independent replications and workload-specific
+measurements, especially for alternative lowerings.
+
+See [benchmark source, method, and reproduction commands](tools/benchmarks/conditional-async/README.md),
+[all raw runs](tools/benchmarks/conditional-async/results-run-1.json),
+[run 2](tools/benchmarks/conditional-async/results-run-2.json),
+[run 3](tools/benchmarks/conditional-async/results-run-3.json), and
+[pooled medians and ranges](tools/benchmarks/conditional-async/results-summary.json).
+
 ## What feedback we are asking for
 
 This document is a **request for comments**, backed by an experimental compiler
@@ -236,7 +318,7 @@ separates implemented protection from accepted or unresolved tradeoffs.
 | **Reentrancy and cache-dependent order** (H1, H3): work after a conditional await can happen before or after the caller continues. | Expose the mixed completion contract in declarations; document order below; normalize actual thenables through native Promise jobs rather than invoking their callbacks inline. | **Accepted tradeoff.** Plain paths still run inline. Review locks, callbacks, initialization, and shared state on both paths. Use the deferred adapter below where consistent entry timing matters. |
 | **Mixed return contracts and hard typing** (H2, H3): consumers can assume a Promise or miss deferred completion. | Conservatively infer `Awaited<T> \| Promise<Awaited<T>>`, require explicit annotations to allow both arms, and emit ordinary union-return declarations. Tests cover generics, nested Promise types, `void`, and invalid annotations. | **Mitigated.** Callers must consume completion; direct `.then` / `.catch` on the union is invalid. Types do not enforce waiting or describe effects. |
 | **Unclear use case / extra syntax for existing patterns** (H1): manual branching or a generator runner can already do this. | Target buffered writes: most events fit in memory, occasional flushes return a Promise. The emitter centralizes the generator/thenable machinery so each call site can express sequencing once. | **Unresolved language-design judgment.** This reduces boilerplate, not expressive capability; ordinary async or manual branching remains appropriate for many APIs. |
-| **Confusing meaning and insufficient performance evidence** (H1, H3): shorthand may obscure semantic cost. | Publish actual emitted code, explicit timing/error contracts, and allocation tests. The synchronous runner uses iteration rather than recursive resumption; tests process 100,000 plain awaits. | **Partly mitigated.** There is no engine benchmark proving a net speedup. Generator/probe allocations, code size, and Promise normalization cost remain; benchmark the real workload before adoption. |
+| **Confusing meaning and insufficient performance evidence** (H1, H3): shorthand may obscure semantic cost. | Publish actual emitted code, explicit timing/error contracts, and allocation tests. The synchronous runner uses iteration rather than recursive resumption; tests process 100,000 plain awaits. | **Measured tradeoff.** The buffered-write results above favor conditional waits over unconditional ones in flat loops, but manual checks/continuations win and conditional-function lowering regresses in layered workloads. Generator/probe allocations, code size, and Promise normalization cost remain. Native engine performance is unmeasured; benchmark the real workload before adoption. |
 | **Nonstandard runtime syntax conflicts with TypeScript policy** (H4). | Keep this an experimental fork. Emit standard JavaScript and erasable union declarations, with no type-directed runtime branching. Ordinary-source async baselines remain unchanged in the focused suite. | **Unresolved upstream/tooling objection.** This is not an ECMAScript standard or an upstream TypeScript feature. Stock parsers, formatters, linters, and source-executing runtimes need support; declarations alone do not fix source compatibility. |
 | **Conditional iterators need concurrency semantics** (H3). | Reject `async? function*`; retain ordinary async generators and ordinary `for await`. Their existing Promise/iteration contracts are not replaced. | **Scoped out.** No `for await?` or conditional iterator protocol is implemented. Independent calls still require application-level concurrency control. |
 
