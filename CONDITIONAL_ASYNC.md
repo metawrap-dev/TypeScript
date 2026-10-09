@@ -1,5 +1,43 @@
 # Request for comments: conditional async and await
 
+## TL;DR / Summary
+
+This is a **request for comments on an experimental TypeScript fork**. Buffered
+writes usually complete immediately and occasionally need an asynchronous flush.
+Repeated `const temp = ...; if (temp) await temp` checks are painful and ugly;
+`await?` expresses that sequencing directly. `async?` preserves synchronous
+completion through the calling layers, returning a Promise only when needed.
+
+**Latest measurements — layered buffered writer:** 100,000 records, 300,000
+writes, 4.8 MB; pooled medians of 27 samples across three fresh Node processes.
+The same latest batch is used for every entry. Lower times are better.
+
+| Implementation | Memory, no flush | Microtask flushes | File writes |
+| --- | ---: | ---: | ---: |
+| ordinary `async` + `await` | 27.52 ms | 26.19 ms | 33.60 ms |
+| ordinary `async` + manual checks | 9.54 ms | 9.33 ms | 15.23 ms |
+| ordinary `async` + `await?` | 23.48 ms | 21.38 ms | 29.62 ms |
+| **`async?` + `await?`** | 6.04 ms | 5.39 ms | 11.25 ms |
+| manual synchronous continuations | 5.94 ms | 4.01 ms | 10.38 ms |
+
+In this batch, conditional functions take about **4.6× less elapsed time** than
+ordinary async/await in memory, and are within about **2% of the manual
+continuation median**. Manual continuations explicitly resume through
+`pending.then(resume)` after a flush; they assume `void | Promise<void>`, while
+the compiler supports arbitrary thenables. For the flat in-memory writer,
+`async?` + `await?` takes **2.74 ms**, versus **20.16 ms** for ordinary async/await.
+
+Supported short sequences and `for` loops create continuation callbacks only
+when they suspend; larger sequences use shared callbacks, and complex bodies
+retain a generator fallback. This is a working prototype, **not an ECMAScript
+standard or an upstream TypeScript feature**.
+
+Measured on Node v24.19.0, targeting ES2022, on 2026-10-09. These synthetic
+results vary in a shared environment; file writes omit `fsync`. They do not
+predict native-engine performance or establish statistical equivalence. See
+[the full latest results and tradeoffs](#delayed-callback-creation-latest-measurements)
+for both layouts, earlier comparisons, raw samples, and limitations.
+
 ## The problem
 
 Buffered code often performs many small operations that complete immediately
