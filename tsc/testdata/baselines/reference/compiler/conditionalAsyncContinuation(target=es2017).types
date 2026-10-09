@@ -1,0 +1,142 @@
+//// [tests/cases/compiler/conditionalAsyncContinuation.ts] ////
+
+=== conditionalAsyncContinuation.ts ===
+interface Writer { write(value: number): unknown; }
+>write : (value: number) => unknown
+>value : number
+
+export async? function record(writer: Writer): void | Promise<void> {
+>record : (writer: Writer) => void | Promise<void>
+>writer : Writer
+
+    await? writer.write(0);
+>await? writer.write(0) : unknown
+>writer.write(0) : unknown
+>writer.write : (value: number) => unknown
+>writer : Writer
+>write : (value: number) => unknown
+>0 : 0
+
+    await? writer.write(1);
+>await? writer.write(1) : unknown
+>writer.write(1) : unknown
+>writer.write : (value: number) => unknown
+>writer : Writer
+>write : (value: number) => unknown
+>1 : 1
+
+    await? writer.write(2);
+>await? writer.write(2) : unknown
+>writer.write(2) : unknown
+>writer.write : (value: number) => unknown
+>writer : Writer
+>write : (value: number) => unknown
+>2 : 2
+}
+export async? function loop(writer: Writer, count: number): void | Promise<void> {
+>loop : (writer: Writer, count: number) => void | Promise<void>
+>writer : Writer
+>count : number
+
+    for (let i = 0; i < count; i++) await? writer.write(i);
+>i : number
+>0 : 0
+>i < count : boolean
+>i : number
+>count : number
+>i++ : number
+>i : number
+>await? writer.write(i) : unknown
+>writer.write(i) : unknown
+>writer.write : (value: number) => unknown
+>writer : Writer
+>write : (value: number) => unknown
+>i : number
+}
+export const arrow = async? (writer: Writer): void | Promise<void> => {
+>arrow : (writer: Writer) => void | Promise<void>
+>async? (writer: Writer): void | Promise<void> => {    await? writer.write(0);    await? writer.write(1);} : (writer: Writer) => void | Promise<void>
+>writer : Writer
+
+    await? writer.write(0);
+>await? writer.write(0) : unknown
+>writer.write(0) : unknown
+>writer.write : (value: number) => unknown
+>writer : Writer
+>write : (value: number) => unknown
+>0 : 0
+
+    await? writer.write(1);
+>await? writer.write(1) : unknown
+>writer.write(1) : unknown
+>writer.write : (value: number) => unknown
+>writer : Writer
+>write : (value: number) => unknown
+>1 : 1
+
+};
+export class Method {
+>Method : Method
+
+    write(value: number): unknown { return value; }
+>write : (value: number) => unknown
+>value : number
+>value : number
+
+    async? run(): void | Promise<void> {
+>run : () => void | Promise<void>
+
+        await? this.write(0);
+>await? this.write(0) : unknown
+>this.write(0) : unknown
+>this.write : (value: number) => unknown
+>this : this
+>write : (value: number) => unknown
+>0 : 0
+
+        await? this.write(1);
+>await? this.write(1) : unknown
+>this.write(1) : unknown
+>this.write : (value: number) => unknown
+>this : this
+>write : (value: number) => unknown
+>1 : 1
+    }
+}
+// Captured per-iteration bindings and value-consuming awaits retain the fallback.
+export async? function capture(writer: Writer): void | Promise<void> {
+>capture : (writer: Writer) => void | Promise<void>
+>writer : Writer
+
+    for (let i = 0; i < 3; i++) await? writer.write((() => i)());
+>i : number
+>0 : 0
+>i < 3 : boolean
+>i : number
+>3 : 3
+>i++ : number
+>i : number
+>await? writer.write((() => i)()) : unknown
+>writer.write((() => i)()) : unknown
+>writer.write : (value: number) => unknown
+>writer : Writer
+>write : (value: number) => unknown
+>(() => i)() : number
+>(() => i) : () => number
+>() => i : () => number
+>i : number
+}
+export async? function value(writer: Writer) { return await? writer.write(0); }
+>value : (writer: Writer) => unknown
+>writer : Writer
+>await? writer.write(0) : unknown
+>writer.write(0) : unknown
+>writer.write : (value: number) => unknown
+>writer : Writer
+>write : (value: number) => unknown
+>0 : 0
+
+export const __conditionalContinue = 1;
+>__conditionalContinue : 1
+>1 : 1
+

@@ -956,6 +956,11 @@ func (f *NodeFactory) NewConditionalAwaitHelper(expression *ast.Expression) *ast
 	return f.NewCallExpression(f.NewUnscopedHelperName("__conditionalAwait"), nil, nil, f.NewNodeList([]*ast.Node{expression}), 0)
 }
 
+func (f *NodeFactory) NewConditionalContinueHelper(pending, callback *ast.Expression) *ast.Expression {
+	f.emitContext.RequestEmitHelper(conditionalContinueHelper)
+	return f.NewCallExpression(f.NewUnscopedHelperName("__conditionalContinue"), nil, nil, f.NewNodeList([]*ast.Node{pending, callback}), 0)
+}
+
 func (f *NodeFactory) newAwaiterHelper(hasLexicalThis bool, argumentsExpression *ast.Expression, parameters *ast.NodeList, body *ast.BlockNode, helper *EmitHelper) *ast.Expression {
 	f.emitContext.RequestEmitHelper(helper)
 

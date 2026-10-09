@@ -64,3 +64,43 @@ export async? function discard(value: unknown): void | Promise<void> {
 export async? function contextualVoid(callback: () => void): void | Promise<void> {
     return callback();
 }
+
+export interface DirectWriter { write(value: number): unknown }
+export async? function directWrites(writer: DirectWriter): void | Promise<void> {
+    await? writer.write(0);
+    await? writer.write(1);
+    await? writer.write(2);
+}
+export async? function directLoop(writer: DirectWriter, count: number): void | Promise<void> {
+    for (let i = 0; i < count; i++) await? writer.write(i);
+}
+export const directArrow = async? (writer: DirectWriter): void | Promise<void> => {
+    await? writer.write(0);
+    await? writer.write(1);
+};
+export class DirectMethod {
+    values: number[] = [];
+    write(value: number): unknown { this.values.push(value); return undefined; }
+    async? run(): void | Promise<void> {
+        await? this.write(0);
+        await? this.write(1);
+    }
+}
+export async? function directShadow(i: number, writer: DirectWriter): void | Promise<void> {
+    for (let i = 0; i < 3; i++) await? writer.write(i);
+}
+export async? function directLoopHooks(writer: DirectWriter, condition: () => boolean, increment: () => void): void | Promise<void> {
+    for (let i = 0; condition(); increment()) await? writer.write(i);
+}
+export async? function capturedLoop(writer: DirectWriter): void | Promise<void> {
+    for (let i = 0; i < 3; i++) await? writer.write((() => i)());
+}
+export const __conditionalContinue = 30;
+
+export async? function directNameCollision(_resume_1: number, _pending_1: number, writer: DirectWriter): void | Promise<void> {
+    await? writer.write(_resume_1);
+    await? writer.write(_pending_1);
+}
+export async? function directPromiseShadow(Promise: number, writer: DirectWriter): void | Promise<void> {
+    await? writer.write(Promise);
+}

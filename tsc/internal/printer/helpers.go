@@ -591,12 +591,20 @@ var conditionalAwaiterHelper = &EmitHelper{
 };`),
 }
 
+var conditionalContinueHelper = &EmitHelper{
+	Inline: true,
+	Name:   "typescript:conditional-continue", ImportName: "__conditionalContinue", Priority: &Priority{5},
+	TextCallback: inlineConditionalHelper(`var __conditionalContinue = (this && this.__conditionalContinue) || function (pending, resume) {
+    return Promise.resolve(pending).then(resume);
+};`),
+}
+
 func IsInlineHelperName(name string) bool {
-	return name == "__conditionalAwait" || name == "__conditionalAwaiter"
+	return name == "__conditionalAwait" || name == "__conditionalAwaiter" || name == "__conditionalContinue"
 }
 func inlineConditionalHelper(text string) func(func(string) string) string {
 	return func(name func(string) string) string {
-		// Replace both names in one pass so renamed prefixes cannot rewrite each other.
-		return strings.NewReplacer("__conditionalAwaiter", name("__conditionalAwaiter"), "__conditionalAwait", name("__conditionalAwait")).Replace(text)
+		// Replace helper names in one pass so renamed prefixes cannot rewrite each other.
+		return strings.NewReplacer("__conditionalContinue", name("__conditionalContinue"), "__conditionalAwaiter", name("__conditionalAwaiter"), "__conditionalAwait", name("__conditionalAwait")).Replace(text)
 	}
 }

@@ -763,6 +763,9 @@ func (tx *asyncTransformer) transformAsyncFunctionParameterList(node *ast.Node) 
 }
 
 func (tx *asyncTransformer) transformAsyncFunctionBody(node *ast.Node, outerParameters *ast.NodeList) *ast.Node {
+	if body := tx.tryDirectConditionalBody(node); body != nil {
+		return body
+	}
 	isArrow := node.Kind == ast.KindArrowFunction
 	savedCapturedSuperProperties := tx.capturedSuperProperties
 	savedHasSuperElementAccess := tx.hasSuperElementAccess

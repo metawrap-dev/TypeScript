@@ -60,6 +60,21 @@ layered `async?` functions expose substantial generator overhead.** The original
 results below motivated a lowering optimization; the follow-up measurements
 and explanation immediately after these tables describe the updated output.
 
+**Latest result: direct continuations reduce layered in-memory `async?` from
+124.95 ms to 9.00 ms.** In the same new batch, ordinary async/await takes
+30.01 ms and manual continuations take 6.44 ms. The current lowering wins
+against ordinary async/await in all three layered scenarios, while manual
+continuations remain faster. The full follow-up tables below preserve all
+strategies and the earlier batches for comparison.
+
+“Manual sync continuation” is hand-written JavaScript control flow: run ordinary
+calls and loops while results are `undefined`; when a write returns a Promise,
+return `pending.then(resume)` to continue after flushing. It creates no generator
+and does not suspend for synchronous writes. The layered version has explicit
+payload/trailer callbacks. This benchmark implementation assumes its precise
+`void | Promise<void>` contract, whereas the compiler must handle arbitrary
+thenables, getter effects, and error timing.
+
 Each trial writes **100,000 records / 300,000 small writes / 4.8 MB**. Periodic
 scenarios flush a **64 KiB buffer** (73 full flushes plus one final partial
 flush). The microtask sink isolates scheduling overhead; the file sink actually
@@ -216,14 +231,69 @@ For comparison, these are **all strategies in the updated batch**:
 
 The flat case improves substantially; the layered case improves but still loses
 to ordinary async/await and manual continuations. Generator-function/object and
-runner setup still occur per record. A future continuation/state-machine
-lowering could remove that per-call machinery, but must preserve locals,
-lexical bindings, `try`/`finally`, loops, and synchronous error behavior; it is
-not implemented here. The shared environment remains noisy: updated layered
+runner setup still occur per record. These results motivated the direct continuation lowering described next.
+General-purpose continuation/state-machine lowering still must preserve locals,
+lexical bindings, `try`/`finally`, loops, and synchronous error behavior; complex
+bodies retain the generator fallback. The shared environment remains noisy: updated layered
 microtask samples span 89.76–322.64 ms. Other strategies' medians also moved between
 batches, so these numbers support an implementation improvement, not a precise
 universal speedup. See `optimized-run-{1,2,3}.json` and `optimized-summary.json`
 under `tools/benchmarks/conditional-async/` for all raw samples and ranges.
+
+### Direct continuation generation: latest measurements
+
+We now generate ordinary continuations for the benchmark's three-write record
+function and ordinary resume loops for its outer/flat loops. The synchronous
+path no longer constructs generator functions, generator objects, or runners.
+It still uses receiver-preserving thenable probing; only actual suspension
+calls the Promise continuation helper. This is the same broad execution pattern
+as the manual implementation, with the proposal's broader thenable semantics.
+
+The unchanged workload was rerun in three fresh processes, with 27 pooled
+samples per case. **These are all strategies in the latest batch:**
+
+**Flat writer**
+
+| Implementation | In memory | Microtask flushes | File writes |
+| --- | ---: | ---: | ---: |
+| ordinary async + await | 23.83 ms | 20.42 ms | 25.82 ms |
+| ordinary async + manual checks | 2.55 ms | 3.70 ms | 9.17 ms |
+| ordinary async + await? | 3.08 ms | 4.38 ms | 10.89 ms |
+| async? + await? | 3.20 ms | 4.82 ms | 10.18 ms |
+| manual sync continuation | 3.45 ms | 2.66 ms | 8.20 ms |
+
+**Layered writer**
+
+| Implementation | In memory | Microtask flushes | File writes |
+| --- | ---: | ---: | ---: |
+| ordinary async + await | 30.01 ms | 27.12 ms | 34.28 ms |
+| ordinary async + manual checks | 10.48 ms | 9.31 ms | 14.23 ms |
+| ordinary async + await? | 25.97 ms | 21.65 ms | 30.45 ms |
+| async? + await? | 9.00 ms | 6.86 ms | 12.61 ms |
+| manual sync continuation | 6.44 ms | 4.71 ms | 9.17 ms |
+
+**Layered `async?` before/after direct generation:**
+
+| Sink | Optimized generator | Direct continuation | Generator / direct |
+| --- | ---: | ---: | ---: |
+| memory | 124.95 ms | 9.00 ms | 13.89× |
+| microtask | 111.21 ms | 6.86 ms | 16.21× |
+| file | 122.48 ms | 12.61 ms | 9.71× |
+
+The remaining difference from manual continuations includes general thenable
+probes, wrapped Promise normalization on suspension, discarded final fulfillment
+handling, and differences in the generated closure/control-flow shape. We have
+not separately profiled these costs, and matching handwritten code's exact
+speed is not guaranteed. The flat writer was already amortizing generator
+setup, so removing it yields a much smaller improvement there.
+
+These before/after ratios compare separate batches. Other strategies moved
+between batches, so the same-batch comparison is the stronger guide to relative
+performance. We retained every sample, including outliers: direct layered file
+trials range from 10.24 to 95.76 ms. Environment and method are unchanged;
+these are synthetic Node workloads, not native-engine predictions. See
+`continuation-run-{1,2,3}.json` and `continuation-summary.json` alongside the
+previous results for all raw timings and ranges.
 
 ## What feedback we are asking for
 
@@ -296,11 +366,13 @@ await. Ordinary async functions continue to return promises. `async?` generators
 are rejected because this extension does not define a conditional iterator API;
 use ordinary `async function*` for them.
 
-The emitter lowers conditional functions through generators and a small runner,
+The emitter selects direct continuations for eligible discarded-await sequences
+and single-await for loops; other bodies use generators and a small runner,
 using TypeScript's existing preservation of lexical bindings and control flow.
-The synchronous path allocates a generator, but plain conditional awaits
-allocate no probe/yield packets, no promise, and introduce no microtask. This is a semantic fast path;
-there is no claim that generator lowering is faster than hand-written branching.
+Plain conditional awaits allocate no probe/yield packets or Promise and
+introduce no microtask. The fallback still allocates a generator; the direct
+path allocates ordinary continuation closures instead. Performance depends on
+body shape and workload; the measurements above distinguish those paths.
 
 The new helpers are emitted inline even with `--importHelpers`, because released
 tslib packages do not supply them. `--noEmitHelpers` suppresses them and requires
@@ -382,6 +454,97 @@ This output is standard ES2022 JavaScript. Older supported targets use the
 existing async transform where necessary; this example does not promise ES5
 support. The `P` helper parameter is currently unused.
 
+### Direct continuation output
+
+The direct path is selected syntactically for a block containing 1–32 standalone
+conditional-await statements, or a block containing one `for` loop with a
+single identifier `let` initializer and a single standalone conditional await
+as its body. Parameters must be simple identifiers without defaults or rest.
+Nested awaits/functions/classes, direct eval, `arguments`, `super`, and
+`new.target` in the relevant expressions retain the generator fallback, as do
+value-consuming awaits, explicit returns, branches, `try`/`finally`, and other
+loop shapes. The limit bounds synchronous continuation call depth. No type
+annotation changes which runtime semantics apply.
+
+For example, this source:
+
+```ts
+declare function writeChunk(chunk: string): void | Promise<void>;
+async? function writeRecord(chunks: string[]): void | Promise<void> {
+    await? writeChunk(chunks[0]);
+    await? writeChunk(chunks[1]);
+    await? writeChunk(chunks[2]);
+}
+async? function writeMany(chunks: string[]): void | Promise<void> {
+    for (let i = 0; i < chunks.length; i++) await? writeChunk(chunks[i]);
+}
+```
+
+produces the following ES2022 output (leading `"use strict"` omitted):
+
+```js
+var __conditionalAwait = (this && this.__conditionalAwait) || function (value) {
+    var then = value !== null && (typeof value === "object" || typeof value === "function") ? value.then : void 0;
+    return typeof then === "function" ? { then: function (resolve, reject) { Reflect.apply(then, value, [resolve, reject]); } } : null;
+};
+var __conditionalContinue = (this && this.__conditionalContinue) || function (pending, resume) {
+    return Promise.resolve(pending).then(resume);
+};
+function writeRecord(chunks) {
+    const _resume_1 = () => {
+        const _pending_2 = __conditionalAwait(writeChunk(chunks[2]));
+        if (_pending_2)
+            return __conditionalContinue(_pending_2, () => {
+            });
+    };
+    const _resume_2 = () => {
+        const _pending_3 = __conditionalAwait(writeChunk(chunks[1]));
+        if (_pending_3)
+            return __conditionalContinue(_pending_3, _resume_1);
+        return _resume_1();
+    };
+    const _pending_1 = __conditionalAwait(writeChunk(chunks[0]));
+    if (_pending_1)
+        return __conditionalContinue(_pending_1, _resume_2);
+    return _resume_2();
+}
+function writeMany(chunks) {
+    {
+        let i = 0;
+        const _resume_3 = () => {
+            while (i < chunks.length) {
+                const _pending_4 = __conditionalAwait(writeChunk(chunks[i]));
+                if (_pending_4)
+                    return __conditionalContinue(_pending_4, () => {
+                        i++;
+                        return _resume_3();
+                    });
+                i++;
+            }
+        };
+        return _resume_3();
+    }
+}
+```
+
+The empty final callback discards the last thenable's fulfillment value, while
+retaining rejection. Each continuation runs only after the preceding write
+completes. A loop increments after fulfillment, and synchronous iterations use
+`while` rather than recursive calls. Arrow callbacks retain lexical `this`;
+loop bindings keep an enclosing block scope. Throws before suspension escape
+synchronously; throws in a resumed callback reject its Promise.
+
+The `__conditionalContinue` helper remains inline under `--importHelpers` and
+is collision-safe like the existing helpers. With `--noEmitHelpers`, consumers
+must supply it when direct continuations are emitted. Its global helper scope
+also avoids capturing a source parameter named `Promise`.
+
+Tests cover each suspension position, discarded values, rejections, throwing
+then/getters, receiver preservation, deferred then invocation, method `this`,
+loop condition/increment timing, loop variable shadowing, generated-name and
+helper collisions, a source parameter named `Promise`, 100,000 synchronous
+iterations without Promise allocation, and fallback for captured loop bindings.
+
 ## Historical objections and our response
 
 Research checked on 2026-10-09. The sources below include the original
@@ -408,7 +571,7 @@ separates implemented protection from accepted or unresolved tradeoffs.
 | **Reentrancy and cache-dependent order** (H1, H3): work after a conditional await can happen before or after the caller continues. | Expose the mixed completion contract in declarations; document order below; normalize actual thenables through native Promise jobs rather than invoking their callbacks inline. | **Accepted tradeoff.** Plain paths still run inline. Review locks, callbacks, initialization, and shared state on both paths. Use the deferred adapter below where consistent entry timing matters. |
 | **Mixed return contracts and hard typing** (H2, H3): consumers can assume a Promise or miss deferred completion. | Conservatively infer `Awaited<T> \| Promise<Awaited<T>>`, require explicit annotations to allow both arms, and emit ordinary union-return declarations. Tests cover generics, nested Promise types, `void`, and invalid annotations. | **Mitigated.** Callers must consume completion; direct `.then` / `.catch` on the union is invalid. Types do not enforce waiting or describe effects. |
 | **Unclear use case / extra syntax for existing patterns** (H1): manual branching or a generator runner can already do this. | Target buffered writes: most events fit in memory, occasional flushes return a Promise. The emitter centralizes the generator/thenable machinery so each call site can express sequencing once. | **Unresolved language-design judgment.** This reduces boilerplate, not expressive capability; ordinary async or manual branching remains appropriate for many APIs. |
-| **Confusing meaning and insufficient performance evidence** (H1, H3): shorthand may obscure semantic cost. | Publish actual emitted code, explicit timing/error contracts, and allocation tests. Plain awaits no longer yield or allocate probe packets; tests process 100,000 plain awaits. Discarded values and actual undefined completion have fast paths. | **Measured tradeoff.** The buffered-write results above favor conditional waits over unconditional ones in flat loops, the optimized lowering reduces overhead, but layered conditional functions remain slower than ordinary async/await and manual continuations. Per-call generator/runner setup, code size, and thenable normalization cost remain. Native engine performance is unmeasured; benchmark the real workload before adoption. |
+| **Confusing meaning and insufficient performance evidence** (H1, H3): shorthand may obscure semantic cost. | Publish actual emitted code, explicit timing/error contracts, and allocation tests. Plain awaits no longer yield or allocate probe packets; tests process 100,000 plain awaits. Discarded values and actual undefined completion have fast paths. | **Measured tradeoff.** The buffered-write results above favor conditional waits over unconditional ones in flat loops, the optimized lowering reduces overhead, but direct continuations now beat ordinary async/await in the measured layered workloads; manual continuations still win. General control flow retains generator setup, and code size and thenable normalization cost remain. Native engine performance is unmeasured; benchmark the real workload before adoption. |
 | **Nonstandard runtime syntax conflicts with TypeScript policy** (H4). | Keep this an experimental fork. Emit standard JavaScript and erasable union declarations, with no type-directed runtime branching. Ordinary-source async baselines remain unchanged in the focused suite. | **Unresolved upstream/tooling objection.** This is not an ECMAScript standard or an upstream TypeScript feature. Stock parsers, formatters, linters, and source-executing runtimes need support; declarations alone do not fix source compatibility. |
 | **Conditional iterators need concurrency semantics** (H3). | Reject `async? function*`; retain ordinary async generators and ordinary `for await`. Their existing Promise/iteration contracts are not replaced. | **Scoped out.** No `for await?` or conditional iterator protocol is implemented. Independent calls still require application-level concurrency control. |
 

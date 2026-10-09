@@ -45,11 +45,17 @@ var __conditionalAwaiter = (this && this.__conditionalAwaiter) || function (this
     }
     return step((generator = generator.apply(thisArg, _arguments || [])).next());
 };
+var __conditionalContinue = (this && this.__conditionalContinue) || function (pending, resume) {
+    return Promise.resolve(pending).then(resume);
+};
 export function read(value) {
     return __conditionalAwaiter(this, void 0, void 0, function* () { var _a, _b; return ((_b = __conditionalAwait(_a = value)) ? yield _b : _a); });
 }
 export function flush(value) {
-    return __conditionalAwaiter(this, void 0, void 0, function* () { var _a; ((_a = __conditionalAwait(value)) ? yield _a : void 0); });
+    const _pending_1 = __conditionalAwait(value);
+    if (_pending_1)
+        return __conditionalContinue(_pending_1, () => {
+        });
 }
 export const arrow = (value) => __conditionalAwaiter(void 0, void 0, void 0, function* () { var _a, _b; return (((_b = __conditionalAwait(_a = value)) ? yield _b : _a)) + 1; });
 export const expression = function (value) {

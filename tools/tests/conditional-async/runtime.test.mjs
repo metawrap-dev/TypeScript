@@ -25,12 +25,70 @@ for (const target of ["es2015", "es2016", "es2017", "es2022", "esnext"]) {
                 assert.equal(m.simple(value), value);
                 assert.equal(m.expression(value), value);
             }
+            for (const fn of [m.directWrites, writer => m.directLoop(writer, 3), m.directArrow, writer => m.directShadow(99, writer)]) {
+                const expected = fn === m.directArrow ? [0, 1] : [0, 1, 2];
+                let writes = [];
+                assert.equal(fn({ write(i) { writes.push(i); return 17; } }), undefined);
+                assert.deepEqual(writes, expected);
+                for (const suspension of expected) {
+                    writes = [];
+                    let resolve;
+                    const pending = fn({ write(i) { writes.push(i); if (i === suspension) return new Promise(r => { resolve = r; }); } });
+                    assert.ok(pending instanceof Promise);
+                    assert.deepEqual(writes, expected.slice(0, suspension + 1));
+                    resolve(17);
+                    assert.equal(await pending, undefined);
+                    assert.deepEqual(writes, expected);
+                }
+                writes = [];
+                await assert.rejects(fn({ write(i) { writes.push(i); if (i === 0) return Promise.reject(new Error("direct reject")); } }), /direct reject/);
+                assert.deepEqual(writes, [0]);
+                assert.throws(() => fn({ write() { throw new Error("direct sync"); } }), /direct sync/);
+                await assert.rejects(fn({ write(i) { if (i === 0) return Promise.resolve(); throw new Error("direct async"); } }), /direct async/);
+                let reads = 0, calls = 0;
+                const thenable = { get then() { reads++; return function(resolve) { assert.equal(this, thenable); calls++; resolve(17); }; } };
+                const completion = fn({ write() { return thenable; } });
+                assert.equal(reads, 1);
+                assert.equal(calls, 0);
+                assert.equal(await completion, undefined);
+                assert.equal(reads, expected.length);
+                assert.equal(calls, expected.length);
+            }
+            const collisionValues = [];
+            assert.equal(m.directNameCollision(7, 8, { write(i) { collisionValues.push(i); } }), undefined);
+            assert.deepEqual(collisionValues, [7, 8]);
+            assert.equal(await m.directPromiseShadow(7, { write(i) { assert.equal(i, 7); return Promise.resolve(17); } }), undefined);
+            const lateGetter = { get then() { throw new Error("direct late getter"); } };
+            await assert.rejects(m.directWrites({ write(i) { return i === 0 ? Promise.resolve() : lateGetter; } }), /direct late getter/);
+            assert.doesNotMatch(m.directWrites.toString(), /__conditionalAwaiter/);
+            assert.doesNotMatch(m.directLoop.toString(), /__conditionalAwaiter/);
+            assert.match(m.capturedLoop.toString(), /__conditionalAwaiter/);
+            assert.equal(m.directLoop({ write() { throw new Error("empty loop"); } }, 0), undefined);
+            let count = 0;
+            assert.equal(m.directLoop({ write(i) { assert.equal(i, count++); } }, 100000), undefined);
+            assert.equal(count, 100000);
+            const instance = new m.DirectMethod();
+            assert.equal(instance.run(), undefined);
+            assert.deepEqual(instance.values, [0, 1]);
+            instance.values.length = 0;
+            instance.write = function(i) { this.values.push(i); return Promise.resolve(17); };
+            assert.equal(await instance.run(), undefined);
+            assert.deepEqual(instance.values, [0, 1]);
+            let increments = 0;
+            const hooks = m.directLoopHooks({ write() { return Promise.resolve(); } }, () => increments < 2, () => { increments++; });
+            assert.equal(increments, 0);
+            assert.equal(await hooks, undefined);
+            assert.equal(increments, 2);
+            assert.throws(() => m.directLoopHooks({ write() {} }, () => { throw new Error("condition"); }, () => {}), /condition/);
+            await assert.rejects(m.directLoopHooks({ write() { return Promise.resolve(); } }, () => true, () => { throw new Error("increment"); }), /increment/);
             const NativePromise = globalThis.Promise;
             let allocations = 0;
             globalThis.Promise = class extends NativePromise { constructor(fn) { allocations++; super(fn); } };
             try {
                 assert.equal(m.add(3), 4);
                 assert.equal(m.empty(), undefined);
+                assert.equal(m.directWrites({ write() {} }), undefined);
+                assert.equal(m.directLoop({ write() {} }, 100000), undefined);
                 assert.equal(m.loop(10000), 49995000);
                 assert.equal(allocations, 0);
             } finally { globalThis.Promise = NativePromise; }
@@ -133,6 +191,7 @@ for (const target of ["es2015", "es2016", "es2017", "es2022", "esnext"]) {
             assert.equal(m.spacedTernary, 3);
             assert.equal(m.__conditionalAwait, 10);
             assert.equal(m.__conditionalAwaiter, 20);
+            assert.equal(m.__conditionalContinue, 30);
             const dts = readFileSync(path.join(dir, "cases.d.ts"), "utf8");
             assert.match(dts, /function add\(.*\): number \| Promise<number>/);
             assert.match(dts, /function noAwait\(\): number \| Promise<number>/);
@@ -157,15 +216,23 @@ test("native top-level conditional await and importHelpers", async () => {
 });
 
 
-test("conditional helpers remain inline for CommonJS with importHelpers", () => {
+test("conditional helpers remain inline for CommonJS with importHelpers", async () => {
     const dir = mkdtempSync(path.join(tmpdir(), "ts-conditional-helpers-"));
     try {
         const { writeFileSync } = require("node:fs");
         const input = path.join(dir, "single.ts");
-        writeFileSync(input, "export async? function id(value: number | Promise<number>) { return await? value; }\n");
+        writeFileSync(input, "export async? function id(value: number | Promise<number>) { return await? value; }\nexport async? function flush(value: unknown) { await? value; }\n");
         execFileSync(compiler, [input, "--target", "es2015", "--module", "commonjs", "--importHelpers", "--outDir", dir], { stdio: "pipe" });
         const m = require(path.join(dir, "single.js"));
         assert.equal(m.id(9), 9);
+        assert.equal(m.flush(9), undefined);
+        assert.equal(await m.flush(Promise.resolve(9)), undefined);
+        await assert.rejects(m.flush(Promise.reject(new Error("inline continuation"))), /inline continuation/);
+        const noHelpers = path.join(dir, "no-helpers");
+        execFileSync(compiler, [input, "--target", "es2015", "--module", "commonjs", "--noEmitHelpers", "--outDir", noHelpers], { stdio: "pipe" });
+        const noHelpersJs = readFileSync(path.join(noHelpers, "single.js"), "utf8");
+        assert.match(noHelpersJs, /__conditionalContinue\(/);
+        assert.doesNotMatch(noHelpersJs, /var __conditionalContinue/);
         assert.doesNotMatch(readFileSync(path.join(dir, "single.js"), "utf8"), /require\("tslib"\)/);
     } finally { rmSync(dir, { recursive: true, force: true }); }
 });

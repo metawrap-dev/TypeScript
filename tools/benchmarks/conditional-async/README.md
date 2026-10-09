@@ -92,3 +92,17 @@ three paths to `summarize.mjs` to reproduce the follow-up summary. Read the RFC'
 follow-up section for all-strategy tables and shared-environment limitations.
 Tests separately check that these changes preserve void and value completion,
 thenable/rejection behavior, and output ordering.
+
+## Direct continuation follow-up
+
+`continuation-run-{1,2,3}.json` and `continuation-summary.json` use the unchanged
+workload after direct continuation generation was added for the record function
+and the flat/outer for loops. Both paths are selected by source syntax, retain
+generic thenable handling, and emit no generators. Other source shapes retain
+the optimized generator fallback. Use those output paths with the reproduction
+commands above; pass all three paths to `summarize.mjs`. The earlier batches are
+retained, and the RFC reports all strategies from each batch separately.
+
+The manual sync continuation strategy explicitly resumes ordinary control flow
+via `pending.then(resume)` only on a flush. It relies on undefined/native-Promise
+results and is not a full implementation of the proposal's thenable semantics.
