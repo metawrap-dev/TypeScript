@@ -1,10 +1,14 @@
 package printer
 
+import "strings"
+
 type Priority struct {
 	Value int
 }
 
 type EmitHelper struct {
+	Inline bool // The helper is supplied by this compiler fork rather than tslib.
+
 	Name         string                                          // A unique name for this helper.
 	Scoped       bool                                            // Indicates whether the helper MUST be emitted in the current scope.
 	Text         string                                          // ES3-compatible raw script text
@@ -555,4 +559,47 @@ var rewriteRelativeImportExtensionsHelper = &EmitHelper{
     }
     return path;
 };`,
+}
+
+// Keep these helpers inline: released tslib versions do not provide them.
+var conditionalAwaitHelper = &EmitHelper{
+	Inline: true,
+	Name:   "typescript:conditional-await", ImportName: "__conditionalAwait", Priority: &Priority{4},
+	TextCallback: inlineConditionalHelper(`var __conditionalAwait = (this && this.__conditionalAwait) || function (value) {
+    var then = value !== null && (typeof value === "object" || typeof value === "function") ? value.then : void 0;
+    return [value, typeof then === "function" ? { then: function (resolve, reject) { Reflect.apply(then, value, [resolve, reject]); } } : null];
+};`),
+}
+
+var conditionalAwaiterHelper = &EmitHelper{
+	Inline: true,
+	Name:   "typescript:conditional-awaiter", ImportName: "__conditionalAwaiter", Priority: &Priority{5}, Dependencies: []*EmitHelper{conditionalAwaitHelper},
+	TextCallback: inlineConditionalHelper(`var __conditionalAwaiter = (this && this.__conditionalAwaiter) || function (thisArg, _arguments, P, generator) {
+    function step(result) {
+        while (!result.done) {
+            var packet = result.value;
+            if (packet[0] && !packet[1][1]) {
+                result = generator.next(packet[1][0]);
+                continue;
+            }
+            return Promise.resolve(packet[0] ? packet[1][1] : packet[1]).then(
+                function (value) { return step(generator.next(value)); },
+                function (error) { return step(generator["throw"](error)); }
+            );
+        }
+        var completion = __conditionalAwait(result.value);
+        return completion[1] ? Promise.resolve(completion[1]) : completion[0];
+    }
+    return step((generator = generator.apply(thisArg, _arguments || [])).next());
+};`),
+}
+
+func IsInlineHelperName(name string) bool {
+	return name == "__conditionalAwait" || name == "__conditionalAwaiter"
+}
+func inlineConditionalHelper(text string) func(func(string) string) string {
+	return func(name func(string) string) string {
+		// Replace both names in one pass so renamed prefixes cannot rewrite each other.
+		return strings.NewReplacer("__conditionalAwaiter", name("__conditionalAwaiter"), "__conditionalAwait", name("__conditionalAwait")).Replace(text)
+	}
 }

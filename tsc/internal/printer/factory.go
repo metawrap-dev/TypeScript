@@ -944,7 +944,20 @@ func (f *NodeFactory) NewAwaiterHelper(
 	parameters *ast.NodeList,
 	body *ast.BlockNode,
 ) *ast.Expression {
-	f.emitContext.RequestEmitHelper(awaiterHelper)
+	return f.newAwaiterHelper(hasLexicalThis, argumentsExpression, parameters, body, awaiterHelper)
+}
+
+func (f *NodeFactory) NewConditionalAwaiterHelper(hasLexicalThis bool, argumentsExpression *ast.Expression, parameters *ast.NodeList, body *ast.BlockNode) *ast.Expression {
+	return f.newAwaiterHelper(hasLexicalThis, argumentsExpression, parameters, body, conditionalAwaiterHelper)
+}
+
+func (f *NodeFactory) NewConditionalAwaitHelper(expression *ast.Expression) *ast.Expression {
+	f.emitContext.RequestEmitHelper(conditionalAwaitHelper)
+	return f.NewCallExpression(f.NewUnscopedHelperName("__conditionalAwait"), nil, nil, f.NewNodeList([]*ast.Node{expression}), 0)
+}
+
+func (f *NodeFactory) newAwaiterHelper(hasLexicalThis bool, argumentsExpression *ast.Expression, parameters *ast.NodeList, body *ast.BlockNode, helper *EmitHelper) *ast.Expression {
+	f.emitContext.RequestEmitHelper(helper)
 
 	var params *ast.NodeList
 	if parameters != nil {
@@ -982,7 +995,7 @@ func (f *NodeFactory) NewAwaiterHelper(
 	}
 
 	return f.NewCallExpression(
-		f.NewUnscopedHelperName("__awaiter"),
+		f.NewUnscopedHelperName(helper.ImportName),
 		nil, /*questionDotToken*/
 		nil, /*typeArguments*/
 		f.NewNodeList([]*ast.Expression{

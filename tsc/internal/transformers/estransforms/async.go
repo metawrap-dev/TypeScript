@@ -5,6 +5,7 @@ import (
 
 	"github.com/microsoft/TypeScript/tsc/internal/ast"
 	"github.com/microsoft/TypeScript/tsc/internal/collections"
+	"github.com/microsoft/TypeScript/tsc/internal/core"
 	"github.com/microsoft/TypeScript/tsc/internal/printer"
 	"github.com/microsoft/TypeScript/tsc/internal/transformers"
 )
@@ -25,7 +26,9 @@ type asyncTransformer struct {
 	transformers.Transformer
 	superAccessState
 
-	contextFlags asyncContextFlags
+	contextFlags    asyncContextFlags
+	conditionalOnly bool
+	conditionalBody bool
 
 	enclosingFunctionParameterNames *collections.Set[string]
 	lexicalArguments                lexicalArgumentsInfo
@@ -35,7 +38,15 @@ type asyncTransformer struct {
 }
 
 func newAsyncTransformer(opts *transformers.TransformOptions) *transformers.Transformer {
-	tx := &asyncTransformer{}
+	return makeAsyncTransformer(opts, false)
+}
+
+func newConditionalAsyncTransformer(opts *transformers.TransformOptions) *transformers.Transformer {
+	return makeAsyncTransformer(opts, true)
+}
+
+func makeAsyncTransformer(opts *transformers.TransformOptions, conditionalOnly bool) *transformers.Transformer {
+	tx := &asyncTransformer{conditionalOnly: conditionalOnly}
 	result := tx.NewTransformer(tx.visit, opts.Context)
 	tx.initSuperAccessVisitor(tx.EmitContext(), tx.Factory())
 	tx.asyncBodyVisitor = tx.EmitContext().NewNodeVisitor(tx.visitAsyncBodyNode)
@@ -124,6 +135,20 @@ func (tx *asyncTransformer) visitFallback(node *ast.Node) *ast.Node {
 }
 
 func (tx *asyncTransformer) visit(node *ast.Node) *ast.Node {
+	if tx.conditionalOnly && ast.IsFunctionLike(node) {
+		saved := tx.conditionalBody
+		tx.conditionalBody = ast.IsConditionalAsyncFunction(node) && ast.GetFunctionFlags(node)&ast.FunctionFlagsGenerator == 0
+		defer func() { tx.conditionalBody = saved }()
+	}
+	if tx.conditionalOnly && node.Kind == ast.KindAsyncKeyword {
+		if node.Flags&ast.NodeFlagsConditional != 0 {
+			return nil
+		}
+		return node
+	}
+	if tx.conditionalOnly && !tx.conditionalBody && node.SubtreeFacts()&ast.SubtreeContainsConditionalAsync == 0 {
+		return tx.fallbackVisitor(node)
+	}
 	if tx.EmitContext().EmitFlags(node)&printer.EFNoLexicalThis != 0 && tx.inHasLexicalThisContext() {
 		tx.setContextFlag(asyncContextHasLexicalThis, false)
 		defer tx.setContextFlag(asyncContextHasLexicalThis, true)
@@ -287,14 +312,37 @@ func (tx *asyncTransformer) visitForStatementInAsyncBody(node *ast.ForStatement)
 //
 // This function will be called any time a ES2017 await expression is encountered.
 func (tx *asyncTransformer) visitAwaitExpression(node *ast.AwaitExpression) *ast.Node {
+	if tx.conditionalOnly && !tx.conditionalBody {
+		if node.Flags&ast.NodeFlagsConditional == 0 {
+			return tx.Visitor().VisitEachChild(node.AsNode())
+		}
+		// Probe once and evaluate the operand once. The native await exists only on
+		// the thenable branch; plain values do not cross a microtask boundary.
+		temp := tx.Factory().NewTempVariable()
+		tx.EmitContext().AddVariableDeclaration(temp)
+		probe := tx.Factory().NewConditionalAwaitHelper(tx.Visitor().VisitNode(node.Expression))
+		value := tx.Factory().NewElementAccessExpression(temp, nil, tx.Factory().NewNumericLiteral("0", 0), 0)
+		promise := tx.Factory().NewElementAccessExpression(temp, nil, tx.Factory().NewNumericLiteral("1", 0), 0)
+		return tx.Factory().NewParenthesizedExpression(tx.Factory().NewCommaExpression(
+			tx.Factory().NewAssignmentExpression(temp, probe),
+			tx.Factory().NewConditionalExpression(promise, tx.Factory().NewToken(ast.KindQuestionToken), tx.Factory().NewAwaitExpression(promise), tx.Factory().NewToken(ast.KindColonToken), value),
+		))
+	}
 	// do not downlevel a top-level await as it is module syntax...
 	if tx.inTopLevelContext() {
 		return tx.Visitor().VisitEachChild(node.AsNode())
 	}
-	yieldExpr := tx.Factory().NewYieldExpression(
-		nil, /*asteriskToken*/
-		tx.Visitor().VisitNode(node.Expression),
-	)
+	expression := tx.Visitor().VisitNode(node.Expression)
+	if tx.conditionalOnly {
+		conditional := node.Flags&ast.NodeFlagsConditional != 0
+		if conditional {
+			expression = tx.Factory().NewConditionalAwaitHelper(expression)
+		}
+		expression = tx.Factory().NewArrayLiteralExpression(tx.Factory().NewNodeList([]*ast.Node{
+			tx.Factory().NewKeywordExpression(core.IfElse(conditional, ast.KindTrueKeyword, ast.KindFalseKeyword)), expression,
+		}), false)
+	}
+	yieldExpr := tx.Factory().NewYieldExpression(nil, expression)
 	yieldExpr.Loc = node.Loc
 	tx.EmitContext().SetOriginal(yieldExpr, node.AsNode())
 	return yieldExpr
@@ -329,7 +377,7 @@ func (tx *asyncTransformer) visitMethodDeclaration(node *ast.Node) *ast.Node {
 
 	var parameters *ast.NodeList
 	var body *ast.Node
-	if functionFlags&ast.FunctionFlagsAsync != 0 {
+	if functionFlags&ast.FunctionFlagsAsync != 0 && (!tx.conditionalOnly || tx.conditionalBody) {
 		parameters = tx.transformAsyncFunctionParameterList(node)
 		body = tx.transformAsyncFunctionBody(node, parameters)
 	} else {
@@ -401,7 +449,7 @@ func (tx *asyncTransformer) visitFunctionDeclaration(node *ast.Node) *ast.Node {
 
 	var parameters *ast.NodeList
 	var body *ast.Node
-	if functionFlags&ast.FunctionFlagsAsync != 0 {
+	if functionFlags&ast.FunctionFlagsAsync != 0 && (!tx.conditionalOnly || tx.conditionalBody) {
 		parameters = tx.transformAsyncFunctionParameterList(node)
 		body = tx.transformAsyncFunctionBody(node, parameters)
 	} else {
@@ -436,7 +484,7 @@ func (tx *asyncTransformer) visitFunctionExpression(node *ast.Node) *ast.Node {
 
 	var parameters *ast.NodeList
 	var body *ast.Node
-	if functionFlags&ast.FunctionFlagsAsync != 0 {
+	if functionFlags&ast.FunctionFlagsAsync != 0 && (!tx.conditionalOnly || tx.conditionalBody) {
 		parameters = tx.transformAsyncFunctionParameterList(node)
 		body = tx.transformAsyncFunctionBody(node, parameters)
 	} else {
@@ -479,7 +527,7 @@ func (tx *asyncTransformer) visitArrowFunction(node *ast.Node) *ast.Node {
 
 	var parameters *ast.NodeList
 	var body *ast.Node
-	if functionFlags&ast.FunctionFlagsAsync != 0 {
+	if functionFlags&ast.FunctionFlagsAsync != 0 && (!tx.conditionalOnly || tx.conditionalBody) {
 		parameters = tx.transformAsyncFunctionParameterList(node)
 		body = tx.transformAsyncFunctionBody(node, parameters)
 	} else {
@@ -808,7 +856,7 @@ func (tx *asyncTransformer) transformAsyncFunctionBody(node *ast.Node, outerPara
 
 		statements := []*ast.Node{
 			tx.Factory().NewReturnStatement(
-				tx.Factory().NewAwaiterHelper(
+				tx.newAwaiterHelper(
 					hasLexicalThis,
 					argumentsExpression,
 					innerParameters,
@@ -833,7 +881,7 @@ func (tx *asyncTransformer) transformAsyncFunctionBody(node *ast.Node, outerPara
 
 		result = block
 	} else {
-		result = tx.Factory().NewAwaiterHelper(
+		result = tx.newAwaiterHelper(
 			hasLexicalThis,
 			argumentsExpression,
 			innerParameters,
@@ -981,4 +1029,11 @@ func isNodeWithPossibleHoistedDeclaration(node *ast.Node) bool {
 		return true
 	}
 	return false
+}
+
+func (tx *asyncTransformer) newAwaiterHelper(hasLexicalThis bool, arguments *ast.Node, parameters *ast.NodeList, body *ast.Node) *ast.Node {
+	if tx.conditionalOnly {
+		return tx.Factory().NewConditionalAwaiterHelper(hasLexicalThis, arguments, parameters, body)
+	}
+	return tx.Factory().NewAwaiterHelper(hasLexicalThis, arguments, parameters, body)
 }

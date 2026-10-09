@@ -1650,7 +1650,7 @@ func (node *Token) computeSubtreeFacts() SubtreeFacts {
 	case KindAccessorKeyword:
 		return SubtreeContainsClassFields
 	case KindAsyncKeyword:
-		return SubtreeContainsAnyAwait
+		return SubtreeContainsAnyAwait | core.IfElse(node.Flags&NodeFlagsConditional != 0, SubtreeContainsConditionalAsync, SubtreeFactsNone)
 	case KindSuperKeyword:
 		return SubtreeContainsLexicalSuper
 	case KindThisKeyword:
@@ -2198,7 +2198,7 @@ func (node *ShorthandPropertyAssignment) computeSubtreeFacts() SubtreeFacts {
 
 func (node *AwaitExpression) computeSubtreeFacts() SubtreeFacts {
 	// await in an ES2018 async generator must use `yield __await(expr)`
-	return propagateSubtreeFacts(node.Expression) | SubtreeContainsAwait | SubtreeContainsAnyAwait | SubtreeContainsForAwaitOrAsyncGenerator
+	return propagateSubtreeFacts(node.Expression) | SubtreeContainsAwait | SubtreeContainsAnyAwait | SubtreeContainsForAwaitOrAsyncGenerator | core.IfElse(node.Flags&NodeFlagsConditional != 0, SubtreeContainsConditionalAsync, SubtreeFactsNone)
 }
 
 func (node *TypeAssertion) computeSubtreeFacts() SubtreeFacts {

@@ -22,6 +22,10 @@ var (
 )
 
 func GetESTransformer(opts *transformers.TransformOptions) *transformers.Transformer {
+	return transformers.Chain(newConditionalForAwaitTransformer, newConditionalAsyncTransformer, getStandardESTransformer)(opts)
+}
+
+func getStandardESTransformer(opts *transformers.TransformOptions) *transformers.Transformer {
 	options := opts.CompilerOptions
 	switch options.GetEmitScriptTarget() {
 	case core.ScriptTargetESNext:

@@ -35,3 +35,16 @@ func GetFunctionFlags(node *Node) FunctionFlags {
 	}
 	return flags
 }
+
+// IsConditionalAsyncFunction distinguishes async? from ordinary async functions.
+func IsConditionalAsyncFunction(node *Node) bool {
+	if node == nil || node.Modifiers() == nil {
+		return false
+	}
+	for _, modifier := range node.Modifiers().Nodes {
+		if modifier.Kind == KindAsyncKeyword && modifier.Flags&NodeFlagsConditional != 0 {
+			return true
+		}
+	}
+	return false
+}

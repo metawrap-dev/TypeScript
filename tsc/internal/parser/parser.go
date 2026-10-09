@@ -3993,6 +3993,7 @@ func (p *Parser) parseDecoratorExpression() *ast.Expression {
 func (p *Parser) tryParseModifier(hasSeenStaticModifier bool, permitConstAsModifier bool, stopOnStartOfClassStaticBlock bool) *ast.Node {
 	pos := p.nodePos()
 	kind := p.token
+	tokenEnd := p.scanner.TokenEnd()
 	if p.token == ast.KindConstKeyword && permitConstAsModifier {
 		// We need to ensure that any subsequent modifiers appear on the same line
 		// so that when 'const' is a standalone declaration, we don't issue an error.
@@ -4010,7 +4011,11 @@ func (p *Parser) tryParseModifier(hasSeenStaticModifier bool, permitConstAsModif
 			return nil
 		}
 	}
-	return p.finishNode(p.factory.NewModifier(kind), pos)
+	modifier := p.factory.NewModifier(kind)
+	if kind == ast.KindAsyncKeyword && tokenEnd < len(p.sourceText) && p.scanner.TokenStart() > tokenEnd && p.sourceText[tokenEnd] == '?' {
+		modifier.Flags |= ast.NodeFlagsConditional
+	}
+	return p.finishNode(modifier, pos)
 }
 
 func (p *Parser) parseContextualModifier(t ast.Kind) bool {
@@ -4091,7 +4096,8 @@ func (p *Parser) nextTokenIsClassKeywordOnSameLine() bool {
 }
 
 func (p *Parser) nextTokenIsFunctionKeywordOnSameLine() bool {
-	return p.nextToken() == ast.KindFunctionKeyword && !p.hasPrecedingLineBreak()
+	p.nextTokenAfterAsync()
+	return p.token == ast.KindFunctionKeyword && !p.hasPrecedingLineBreak()
 }
 
 func (p *Parser) nextTokenCanFollowExportModifier() bool {
@@ -4112,7 +4118,11 @@ func (p *Parser) canFollowGetOrSetKeyword() bool {
 }
 
 func (p *Parser) nextTokenIsOnSameLineAndCanFollowModifier() bool {
-	p.nextToken()
+	if p.token == ast.KindAsyncKeyword {
+		p.nextTokenAfterAsync()
+	} else {
+		p.nextToken()
+	}
 	if p.hasPrecedingLineBreak() {
 		return false
 	}
@@ -4285,7 +4295,7 @@ func (p *Parser) isParenthesizedArrowFunctionExpression() core.Tristate {
 
 func (p *Parser) nextIsParenthesizedArrowFunctionExpression() core.Tristate {
 	if p.token == ast.KindAsyncKeyword {
-		p.nextToken()
+		p.nextTokenAfterAsync()
 		if p.hasPrecedingLineBreak() {
 			return core.TSFalse
 		}
@@ -4513,8 +4523,12 @@ func (p *Parser) parseParenthesizedArrowFunctionExpression(allowAmbiguity bool, 
 func (p *Parser) parseModifiersForArrowFunction() *ast.ModifierList {
 	if p.token == ast.KindAsyncKeyword {
 		pos := p.nodePos()
-		p.nextToken()
-		modifier := p.finishNode(p.factory.NewModifier(ast.KindAsyncKeyword), pos)
+		conditional := p.nextTokenAfterAsync()
+		modifier := p.factory.NewModifier(ast.KindAsyncKeyword)
+		if conditional {
+			modifier.Flags |= ast.NodeFlagsConditional
+		}
+		modifier = p.finishNode(modifier, pos)
 		return p.newModifierList(modifier.Loc, p.nodeSliceArena.NewSlice1(modifier))
 	}
 	return nil
@@ -4596,7 +4610,7 @@ func (p *Parser) nextIsUnParenthesizedAsyncArrowFunction() bool {
 	//      1) async[no LineTerminator here]AsyncArrowBindingIdentifier[?Yield][no LineTerminator here]=>AsyncConciseBody[?In]
 	//      2) CoverCallExpressionAndAsyncArrowHead[?Yield, ?Await][no LineTerminator here]=>AsyncConciseBody[?In]
 	if p.token == ast.KindAsyncKeyword {
-		p.nextToken()
+		p.nextTokenAfterAsync()
 		// If the "async" is followed by "=>" token then it is not a beginning of an async arrow-function
 		// but instead a simple arrow-function which will be parsed inside "parseAssignmentExpressionOrHigher"
 		if p.hasPrecedingLineBreak() || p.token == ast.KindEqualsGreaterThanToken {
@@ -5205,8 +5219,17 @@ func (p *Parser) isAwaitExpression() bool {
 
 func (p *Parser) parseAwaitExpression() *ast.Node {
 	pos := p.nodePos()
+	end := p.scanner.TokenEnd()
 	p.nextToken()
-	return p.finishNode(p.factory.NewAwaitExpression(p.parseSimpleUnaryExpression()), pos)
+	conditional := p.token == ast.KindQuestionToken && p.scanner.TokenStart() == end
+	if conditional {
+		p.nextToken()
+	}
+	node := p.factory.NewAwaitExpression(p.parseSimpleUnaryExpression())
+	if conditional {
+		node.Flags |= ast.NodeFlagsConditional
+	}
+	return p.finishNode(node, pos)
 }
 
 func (p *Parser) parseTypeAssertion() *ast.Node {
@@ -6195,7 +6218,11 @@ func (p *Parser) scanStartOfDeclaration() bool {
 		case ast.KindAbstractKeyword, ast.KindAccessorKeyword, ast.KindAsyncKeyword, ast.KindDeclareKeyword, ast.KindPrivateKeyword,
 			ast.KindProtectedKeyword, ast.KindPublicKeyword, ast.KindReadonlyKeyword:
 			previousToken := p.token
-			p.nextToken()
+			if previousToken == ast.KindAsyncKeyword {
+				p.nextTokenAfterAsync()
+			} else {
+				p.nextToken()
+			}
 			// ASI takes effect for this modifier.
 			if p.hasPrecedingLineBreak() {
 				return false
@@ -6884,4 +6911,16 @@ func (p *Parser) checkJSSyntax(node *ast.Node) *ast.Node {
 		}
 	}
 	return node
+}
+
+// nextTokenAfterAsync accepts the adjacent suffix in async? without making async
+// a reserved word or consuming an ordinary conditional expression.
+func (p *Parser) nextTokenAfterAsync() bool {
+	end := p.scanner.TokenEnd()
+	p.nextToken()
+	if p.token == ast.KindQuestionToken && p.scanner.TokenStart() == end {
+		p.nextToken()
+		return true
+	}
+	return false
 }

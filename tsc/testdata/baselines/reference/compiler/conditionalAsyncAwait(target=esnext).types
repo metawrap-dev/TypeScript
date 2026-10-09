@@ -1,0 +1,119 @@
+//// [tests/cases/compiler/conditionalAsyncAwait.ts] ////
+
+=== conditionalAsyncAwait.ts ===
+export async? function read<T>(value: T | PromiseLike<T>) { return await? value; }
+>read : <T>(value: T | PromiseLike<T>) => Promise<Awaited<T>> | Awaited<T>
+>value : T | PromiseLike<T>
+>await? value : Awaited<T>
+>value : T | PromiseLike<T>
+
+export async? function flush(value: void | Promise<void>): void | Promise<void> { await? value; }
+>flush : (value: void | Promise<void>) => void | Promise<void>
+>value : void | Promise<void>
+>await? value : void
+>value : void | Promise<void>
+
+export const arrow = async? (value: number | Promise<number>) => (await? value) + 1;
+>arrow : (value: number | Promise<number>) => number | Promise<number>
+>async? (value: number | Promise<number>) => (await? value) + 1 : (value: number | Promise<number>) => number | Promise<number>
+>value : number | Promise<number>
+>(await? value) + 1 : number
+>(await? value) : number
+>await? value : number
+>value : number | Promise<number>
+>1 : 1
+
+export const expression = async? function(value: number | Promise<number>) { return await? value; };
+>expression : (value: number | Promise<number>) => number | Promise<number>
+>async? function(value: number | Promise<number>) { return await? value; } : (value: number | Promise<number>) => number | Promise<number>
+>value : number | Promise<number>
+>await? value : number
+>value : number | Promise<number>
+
+export class Worker { async? read(value: number | Promise<number>) { return await? value; } }
+>Worker : Worker
+>read : (value: number | Promise<number>) => number | Promise<number>
+>value : number | Promise<number>
+>await? value : number
+>value : number | Promise<number>
+
+export async function normal(value: number | Promise<number>) { return await? value; }
+>normal : (value: number | Promise<number>) => Promise<number>
+>value : number | Promise<number>
+>await? value : number
+>value : number | Promise<number>
+
+export async? function forced() { await 1; return 2; }
+>forced : () => number | Promise<number>
+>await 1 : 1
+>1 : 1
+>2 : 2
+
+export async? function noAwait() { return 3; }
+>noAwait : () => number | Promise<number>
+>3 : 3
+
+export async? function empty() {}
+>empty : () => void | Promise<void>
+
+export async? function guarded(value: number | Promise<number>) {
+>guarded : (value: number | Promise<number>) => number | Promise<number>
+>value : number | Promise<number>
+
+    try { return await? value; } finally { await? undefined; }
+>await? value : number
+>value : number | Promise<number>
+>await? undefined : undefined
+>undefined : undefined
+}
+const async = true;
+>async : true
+>true : true
+
+export const ternary = async?1:2;
+>ternary : 1 | 2
+>async?1:2 : 1 | 2
+>async : true
+>1 : 1
+>2 : 2
+
+const good: number | Promise<number> = read(1);
+>good : number | Promise<number>
+>read(1) : 1 | Promise<1>
+>read : <T>(value: T | PromiseLike<T>) => Promise<Awaited<T>> | Awaited<T>
+>1 : 1
+
+const emptyGood: void | Promise<void> = empty();
+>emptyGood : void | Promise<void>
+>empty() : void | Promise<void>
+>empty : () => void | Promise<void>
+
+const wrong: Promise<number> = read(1);
+>wrong : Promise<number>
+>read(1) : 1 | Promise<1>
+>read : <T>(value: T | PromiseLike<T>) => Promise<Awaited<T>> | Awaited<T>
+>1 : 1
+
+async? function wrongReturn(): number { return 1; }
+>wrongReturn : () => number
+>1 : 1
+
+async? function wrongPromiseOnly(): Promise<number> { return 1; }
+>wrongPromiseOnly : () => Promise<number>
+>1 : 1
+
+async? function* wrongGenerator() { yield 1; }
+>wrongGenerator : () => AsyncGenerator<number, void, unknown>
+>yield 1 : any
+>1 : 1
+
+const nestedGeneric: number | Promise<number> = read<Promise<number>>(Promise.resolve(1));
+>nestedGeneric : number | Promise<number>
+>read<Promise<number>>(Promise.resolve(1)) : number | Promise<number>
+>read : <T>(value: T | PromiseLike<T>) => Promise<Awaited<T>> | Awaited<T>
+>Promise.resolve(1) : Promise<number>
+>Promise.resolve : { (): Promise<void>; <T>(value: T): Promise<Awaited<T>>; <T>(value: T | PromiseLike<T>): Promise<Awaited<T>>; }
+>Promise : PromiseConstructor
+>resolve : { (): Promise<void>; <T>(value: T): Promise<Awaited<T>>; <T>(value: T | PromiseLike<T>): Promise<Awaited<T>>; }
+>1 : 1
+

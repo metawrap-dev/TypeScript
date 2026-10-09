@@ -47,6 +47,8 @@ type forawaitTransformer struct {
 
 	enclosingFunctionFlags    ast.FunctionFlags
 	forAwaitHierarchyFacts    forAwaitHierarchyFacts
+	conditionalOnly           bool
+	conditionalBody           bool
 	exportedVariableStatement bool
 
 	fallbackNodeVisitor    *ast.NodeVisitor
@@ -54,8 +56,14 @@ type forawaitTransformer struct {
 }
 
 func newforawaitTransformer(opts *transformers.TransformOptions) *transformers.Transformer {
+	return makeForAwaitTransformer(opts, false)
+}
+func newConditionalForAwaitTransformer(opts *transformers.TransformOptions) *transformers.Transformer {
+	return makeForAwaitTransformer(opts, true)
+}
+func makeForAwaitTransformer(opts *transformers.TransformOptions, conditionalOnly bool) *transformers.Transformer {
 	tx := &forawaitTransformer{
-		compilerOptions: opts.CompilerOptions,
+		compilerOptions: opts.CompilerOptions, conditionalOnly: conditionalOnly,
 	}
 	result := tx.NewTransformer(tx.visit, opts.Context)
 	tx.initSuperAccessVisitor(tx.EmitContext(), tx.Factory())
@@ -124,6 +132,19 @@ func (tx *forawaitTransformer) visitFallback(node *ast.Node) *ast.Node {
 }
 
 func (tx *forawaitTransformer) visit(node *ast.Node) *ast.Node {
+	if tx.conditionalOnly {
+		if !tx.conditionalBody && node.SubtreeFacts()&ast.SubtreeContainsConditionalAsync == 0 {
+			return node
+		}
+		if ast.IsFunctionLike(node) {
+			saved := tx.conditionalBody
+			tx.conditionalBody = ast.IsConditionalAsyncFunction(node) && ast.GetFunctionFlags(node)&ast.FunctionFlagsGenerator == 0
+			defer func() { tx.conditionalBody = saved }()
+		}
+		if !tx.conditionalBody && node.Kind != ast.KindSourceFile {
+			return tx.Visitor().VisitEachChild(node)
+		}
+	}
 	if node.SubtreeFacts()&ast.SubtreeContainsForAwaitOrAsyncGenerator == 0 {
 		return tx.fallbackVisitor(node)
 	}

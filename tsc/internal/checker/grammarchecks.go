@@ -756,6 +756,9 @@ func (c *Checker) checkGrammarForUseStrictSimpleParameterList(node *ast.Node) bo
 }
 
 func (c *Checker) checkGrammarFunctionLikeDeclaration(node *ast.Node) bool {
+	if ast.IsConditionalAsyncFunction(node) && ast.GetFunctionFlags(node)&ast.FunctionFlagsGenerator != 0 {
+		return c.grammarErrorOnNode(node, diagnostics.Conditional_async_generators_are_not_supported)
+	}
 	// Prevent cascading error by short-circuit
 	file := ast.GetSourceFileOfNode(node)
 	funcData := node.FunctionLikeData()

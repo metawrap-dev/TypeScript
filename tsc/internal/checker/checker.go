@@ -2782,7 +2782,7 @@ func (c *Checker) checkSignatureDeclaration(node *ast.Node) {
 			c.languageVersion < LanguageFeatureMinimumTarget.AsyncGenerators {
 			c.checkExternalEmitHelpers(node, ExternalEmitHelpersAsyncGeneratorIncludes)
 		}
-		if functionFlags&ast.FunctionFlagsAsyncGenerator == ast.FunctionFlagsAsync && c.languageVersion < LanguageFeatureMinimumTarget.AsyncFunctions {
+		if functionFlags&ast.FunctionFlagsAsyncGenerator == ast.FunctionFlagsAsync && !ast.IsConditionalAsyncFunction(node) && c.languageVersion < LanguageFeatureMinimumTarget.AsyncFunctions {
 			c.checkExternalEmitHelpers(node, ExternalEmitHelpersAwaiter)
 		}
 	}
@@ -2829,6 +2829,11 @@ func (c *Checker) checkSignatureDeclaration(node *ast.Node) {
 func (c *Checker) checkAsyncFunctionReturnType(node *ast.Node, returnTypeNode *ast.Node) {
 	returnType := c.getTypeFromTypeNode(returnTypeNode)
 	if c.isErrorType(returnType) {
+		return
+	}
+	if ast.IsConditionalAsyncFunction(node) {
+		awaited := c.checkAwaitedType(returnType, false, node, diagnostics.The_return_type_of_an_async_function_must_either_be_a_valid_promise_or_must_not_contain_a_callable_then_member)
+		c.checkTypeAssignableTo(c.conditionalCompletionType(awaited), returnType, returnTypeNode, nil)
 		return
 	}
 	globalPromiseType := c.getGlobalPromiseTypeChecked()
@@ -11083,7 +11088,7 @@ func (c *Checker) checkAwaitExpression(node *ast.Node) *Type {
 	c.checkGrammarAwaitOrAwaitUsing(node)
 	operandType := c.checkExpression(node.Expression())
 	awaitedType := c.checkAwaitedType(operandType, true /*withAlias*/, node, diagnostics.Type_of_await_operand_must_either_be_a_valid_promise_or_must_not_contain_a_callable_then_member)
-	if awaitedType == operandType && !c.isErrorType(awaitedType) && operandType.flags&TypeFlagsAnyOrUnknown == 0 {
+	if node.Flags&ast.NodeFlagsConditional == 0 && awaitedType == operandType && !c.isErrorType(awaitedType) && operandType.flags&TypeFlagsAnyOrUnknown == 0 {
 		c.addErrorOrSuggestion(false, createDiagnosticForNode(node, diagnostics.X_await_has_no_effect_on_the_type_of_this_expression))
 	}
 	return awaitedType
@@ -20663,6 +20668,9 @@ func (c *Checker) getReturnTypeFromBody(fn *ast.Node, checkMode CheckMode) *Type
 	// Promise/A+ compatible implementation will always assimilate any foreign promise, so the
 	// return type of the body is awaited type of the body, wrapped in a native Promise<T> type.
 	if isAsync {
+		if ast.IsConditionalAsyncFunction(fn) {
+			return c.createPromiseReturnType(fn, returnType)
+		}
 		return c.createPromiseType(returnType)
 	}
 	return returnType
@@ -20794,6 +20802,9 @@ func (c *Checker) createPromiseReturnType(fn *ast.Node, promisedType *Type) *Typ
 		c.error(fn, core.IfElse(ast.IsImportCall(fn),
 			diagnostics.A_dynamic_import_call_in_ES5_requires_the_Promise_constructor_Make_sure_you_have_a_declaration_for_the_Promise_constructor_or_include_ES2015_in_your_lib_option,
 			diagnostics.An_async_function_or_method_in_ES5_requires_the_Promise_constructor_Make_sure_you_have_a_declaration_for_the_Promise_constructor_or_include_ES2015_in_your_lib_option))
+	}
+	if ast.IsConditionalAsyncFunction(fn) {
+		return c.conditionalCompletionType(promisedType)
 	}
 	return promiseType
 }
@@ -30234,7 +30245,7 @@ func (c *Checker) getContextualReturnType(functionDecl *ast.Node, contextFlags C
 				return t.flags&(TypeFlagsAnyOrUnknown|TypeFlagsVoid|TypeFlagsInstantiableNonPrimitive) != 0 || c.checkGeneratorInstantiationAssignabilityToReturnType(t, functionFlags, nil /*errorNode*/)
 			})
 		}
-		if functionFlags&ast.FunctionFlagsAsync != 0 {
+		if functionFlags&ast.FunctionFlagsAsync != 0 && !ast.IsConditionalAsyncFunction(functionDecl) {
 			return c.filterType(returnType, func(t *Type) bool {
 				return t.flags&(TypeFlagsAnyOrUnknown|TypeFlagsVoid|TypeFlagsInstantiableNonPrimitive) != 0 || c.getAwaitedTypeOfPromise(t) != nil
 			})
@@ -32724,4 +32735,14 @@ func (c *Checker) NewEmitResolver(emitContext *printer.EmitContext) *EmitResolve
 
 func (c *Checker) GetAliasedSymbol(symbol *ast.Symbol) *ast.Symbol {
 	return c.resolveAlias(symbol)
+}
+
+// Preserve Awaited<T> on both arms: T itself may be instantiated with a promise.
+func (c *Checker) conditionalCompletionType(value *Type) *Type {
+	awaited := core.OrElse(c.getAwaitedType(value), c.unknownType)
+	globalPromise := c.getGlobalPromiseTypeChecked()
+	if globalPromise == c.emptyGenericType {
+		return c.unknownType
+	}
+	return c.getUnionType([]*Type{awaited, c.createTypeReference(globalPromise, []*Type{awaited})})
 }

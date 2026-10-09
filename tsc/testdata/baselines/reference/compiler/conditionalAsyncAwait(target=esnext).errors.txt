@@ -1,0 +1,44 @@
+conditionalAsyncAwait.ts(17,7): error TS2322: Type '1 | Promise<1>' is not assignable to type 'Promise<number>'.
+  Type 'number' is not assignable to type 'Promise<number>'.
+conditionalAsyncAwait.ts(18,32): error TS2322: Type 'number | Promise<number>' is not assignable to type 'number'.
+  Type 'Promise<number>' is not assignable to type 'number'.
+conditionalAsyncAwait.ts(19,37): error TS2322: Type 'number | Promise<number>' is not assignable to type 'Promise<number>'.
+  Type 'number' is not assignable to type 'Promise<number>'.
+conditionalAsyncAwait.ts(20,18): error TS95001: Conditional async generators are not supported. Use 'async function*' instead.
+
+
+==== conditionalAsyncAwait.ts (4 errors) ====
+    export async? function read<T>(value: T | PromiseLike<T>) { return await? value; }
+    export async? function flush(value: void | Promise<void>): void | Promise<void> { await? value; }
+    export const arrow = async? (value: number | Promise<number>) => (await? value) + 1;
+    export const expression = async? function(value: number | Promise<number>) { return await? value; };
+    export class Worker { async? read(value: number | Promise<number>) { return await? value; } }
+    export async function normal(value: number | Promise<number>) { return await? value; }
+    export async? function forced() { await 1; return 2; }
+    export async? function noAwait() { return 3; }
+    export async? function empty() {}
+    export async? function guarded(value: number | Promise<number>) {
+        try { return await? value; } finally { await? undefined; }
+    }
+    const async = true;
+    export const ternary = async?1:2;
+    const good: number | Promise<number> = read(1);
+    const emptyGood: void | Promise<void> = empty();
+    const wrong: Promise<number> = read(1);
+          ~~~~~
+!!! error TS2322: Type '1 | Promise<1>' is not assignable to type 'Promise<number>'.
+!!! error TS2322:   Type 'number' is not assignable to type 'Promise<number>'.
+    async? function wrongReturn(): number { return 1; }
+                                   ~~~~~~
+!!! error TS2322: Type 'number | Promise<number>' is not assignable to type 'number'.
+!!! error TS2322:   Type 'Promise<number>' is not assignable to type 'number'.
+    async? function wrongPromiseOnly(): Promise<number> { return 1; }
+                                        ~~~~~~~~~~~~~~~
+!!! error TS2322: Type 'number | Promise<number>' is not assignable to type 'Promise<number>'.
+!!! error TS2322:   Type 'number' is not assignable to type 'Promise<number>'.
+    async? function* wrongGenerator() { yield 1; }
+                     ~~~~~~~~~~~~~~
+!!! error TS95001: Conditional async generators are not supported. Use 'async function*' instead.
+    
+    const nestedGeneric: number | Promise<number> = read<Promise<number>>(Promise.resolve(1));
+    

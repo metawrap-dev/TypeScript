@@ -40,6 +40,8 @@ const (
 	SubtreeContainsPrivateIdentifierInExpression
 	SubtreeContainsInvalidTemplateEscape
 
+	SubtreeContainsConditionalAsync
+
 	SubtreeFactsComputed              // NOTE: This should always be last
 	SubtreeFactsNone     SubtreeFacts = 0
 

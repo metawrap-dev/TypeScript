@@ -320,7 +320,7 @@ func createExternalHelpersImportDeclarationIfNeeded(emitContext *printer.EmitCon
 func getImportedHelpers(emitContext *printer.EmitContext, sourceFile *ast.SourceFile) []*printer.EmitHelper {
 	var helpers []*printer.EmitHelper
 	for _, helper := range emitContext.GetEmitHelpers(sourceFile.AsNode()) {
-		if !helper.Scoped {
+		if !helper.Scoped && !helper.Inline {
 			helpers = append(helpers, helper)
 		}
 	}

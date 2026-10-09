@@ -1,0 +1,103 @@
+//// [tests/cases/compiler/conditionalAsyncAwait.ts] ////
+
+=== conditionalAsyncAwait.ts ===
+export async? function read<T>(value: T | PromiseLike<T>) { return await? value; }
+>read : Symbol(read, Decl(conditionalAsyncAwait.ts, 0, 0))
+>T : Symbol(T, Decl(conditionalAsyncAwait.ts, 0, 28))
+>value : Symbol(value, Decl(conditionalAsyncAwait.ts, 0, 31))
+>T : Symbol(T, Decl(conditionalAsyncAwait.ts, 0, 28))
+>PromiseLike : Symbol(PromiseLike, Decl(lib.es5.d.ts, --, --))
+>T : Symbol(T, Decl(conditionalAsyncAwait.ts, 0, 28))
+>value : Symbol(value, Decl(conditionalAsyncAwait.ts, 0, 31))
+
+export async? function flush(value: void | Promise<void>): void | Promise<void> { await? value; }
+>flush : Symbol(flush, Decl(conditionalAsyncAwait.ts, 0, 82))
+>value : Symbol(value, Decl(conditionalAsyncAwait.ts, 1, 29))
+>Promise : Symbol(Promise, Decl(lib.es5.d.ts, --, --), Decl(lib.es2015.iterable.d.ts, --, --), Decl(lib.es2015.promise.d.ts, --, --), Decl(lib.es2015.symbol.wellknown.d.ts, --, --), Decl(lib.es2018.promise.d.ts, --, --))
+>Promise : Symbol(Promise, Decl(lib.es5.d.ts, --, --), Decl(lib.es2015.iterable.d.ts, --, --), Decl(lib.es2015.promise.d.ts, --, --), Decl(lib.es2015.symbol.wellknown.d.ts, --, --), Decl(lib.es2018.promise.d.ts, --, --))
+>value : Symbol(value, Decl(conditionalAsyncAwait.ts, 1, 29))
+
+export const arrow = async? (value: number | Promise<number>) => (await? value) + 1;
+>arrow : Symbol(arrow, Decl(conditionalAsyncAwait.ts, 2, 12))
+>value : Symbol(value, Decl(conditionalAsyncAwait.ts, 2, 29))
+>Promise : Symbol(Promise, Decl(lib.es5.d.ts, --, --), Decl(lib.es2015.iterable.d.ts, --, --), Decl(lib.es2015.promise.d.ts, --, --), Decl(lib.es2015.symbol.wellknown.d.ts, --, --), Decl(lib.es2018.promise.d.ts, --, --))
+>value : Symbol(value, Decl(conditionalAsyncAwait.ts, 2, 29))
+
+export const expression = async? function(value: number | Promise<number>) { return await? value; };
+>expression : Symbol(expression, Decl(conditionalAsyncAwait.ts, 3, 12))
+>value : Symbol(value, Decl(conditionalAsyncAwait.ts, 3, 42))
+>Promise : Symbol(Promise, Decl(lib.es5.d.ts, --, --), Decl(lib.es2015.iterable.d.ts, --, --), Decl(lib.es2015.promise.d.ts, --, --), Decl(lib.es2015.symbol.wellknown.d.ts, --, --), Decl(lib.es2018.promise.d.ts, --, --))
+>value : Symbol(value, Decl(conditionalAsyncAwait.ts, 3, 42))
+
+export class Worker { async? read(value: number | Promise<number>) { return await? value; } }
+>Worker : Symbol(Worker, Decl(conditionalAsyncAwait.ts, 3, 100))
+>read : Symbol(Worker.read, Decl(conditionalAsyncAwait.ts, 4, 21))
+>value : Symbol(value, Decl(conditionalAsyncAwait.ts, 4, 34))
+>Promise : Symbol(Promise, Decl(lib.es5.d.ts, --, --), Decl(lib.es2015.iterable.d.ts, --, --), Decl(lib.es2015.promise.d.ts, --, --), Decl(lib.es2015.symbol.wellknown.d.ts, --, --), Decl(lib.es2018.promise.d.ts, --, --))
+>value : Symbol(value, Decl(conditionalAsyncAwait.ts, 4, 34))
+
+export async function normal(value: number | Promise<number>) { return await? value; }
+>normal : Symbol(normal, Decl(conditionalAsyncAwait.ts, 4, 93))
+>value : Symbol(value, Decl(conditionalAsyncAwait.ts, 5, 29))
+>Promise : Symbol(Promise, Decl(lib.es5.d.ts, --, --), Decl(lib.es2015.iterable.d.ts, --, --), Decl(lib.es2015.promise.d.ts, --, --), Decl(lib.es2015.symbol.wellknown.d.ts, --, --), Decl(lib.es2018.promise.d.ts, --, --))
+>value : Symbol(value, Decl(conditionalAsyncAwait.ts, 5, 29))
+
+export async? function forced() { await 1; return 2; }
+>forced : Symbol(forced, Decl(conditionalAsyncAwait.ts, 5, 86))
+
+export async? function noAwait() { return 3; }
+>noAwait : Symbol(noAwait, Decl(conditionalAsyncAwait.ts, 6, 54))
+
+export async? function empty() {}
+>empty : Symbol(empty, Decl(conditionalAsyncAwait.ts, 7, 46))
+
+export async? function guarded(value: number | Promise<number>) {
+>guarded : Symbol(guarded, Decl(conditionalAsyncAwait.ts, 8, 33))
+>value : Symbol(value, Decl(conditionalAsyncAwait.ts, 9, 31))
+>Promise : Symbol(Promise, Decl(lib.es5.d.ts, --, --), Decl(lib.es2015.iterable.d.ts, --, --), Decl(lib.es2015.promise.d.ts, --, --), Decl(lib.es2015.symbol.wellknown.d.ts, --, --), Decl(lib.es2018.promise.d.ts, --, --))
+
+    try { return await? value; } finally { await? undefined; }
+>value : Symbol(value, Decl(conditionalAsyncAwait.ts, 9, 31))
+>undefined : Symbol(undefined)
+}
+const async = true;
+>async : Symbol(async, Decl(conditionalAsyncAwait.ts, 12, 5))
+
+export const ternary = async?1:2;
+>ternary : Symbol(ternary, Decl(conditionalAsyncAwait.ts, 13, 12))
+>async : Symbol(async, Decl(conditionalAsyncAwait.ts, 12, 5))
+
+const good: number | Promise<number> = read(1);
+>good : Symbol(good, Decl(conditionalAsyncAwait.ts, 14, 5))
+>Promise : Symbol(Promise, Decl(lib.es5.d.ts, --, --), Decl(lib.es2015.iterable.d.ts, --, --), Decl(lib.es2015.promise.d.ts, --, --), Decl(lib.es2015.symbol.wellknown.d.ts, --, --), Decl(lib.es2018.promise.d.ts, --, --))
+>read : Symbol(read, Decl(conditionalAsyncAwait.ts, 0, 0))
+
+const emptyGood: void | Promise<void> = empty();
+>emptyGood : Symbol(emptyGood, Decl(conditionalAsyncAwait.ts, 15, 5))
+>Promise : Symbol(Promise, Decl(lib.es5.d.ts, --, --), Decl(lib.es2015.iterable.d.ts, --, --), Decl(lib.es2015.promise.d.ts, --, --), Decl(lib.es2015.symbol.wellknown.d.ts, --, --), Decl(lib.es2018.promise.d.ts, --, --))
+>empty : Symbol(empty, Decl(conditionalAsyncAwait.ts, 7, 46))
+
+const wrong: Promise<number> = read(1);
+>wrong : Symbol(wrong, Decl(conditionalAsyncAwait.ts, 16, 5))
+>Promise : Symbol(Promise, Decl(lib.es5.d.ts, --, --), Decl(lib.es2015.iterable.d.ts, --, --), Decl(lib.es2015.promise.d.ts, --, --), Decl(lib.es2015.symbol.wellknown.d.ts, --, --), Decl(lib.es2018.promise.d.ts, --, --))
+>read : Symbol(read, Decl(conditionalAsyncAwait.ts, 0, 0))
+
+async? function wrongReturn(): number { return 1; }
+>wrongReturn : Symbol(wrongReturn, Decl(conditionalAsyncAwait.ts, 16, 39))
+
+async? function wrongPromiseOnly(): Promise<number> { return 1; }
+>wrongPromiseOnly : Symbol(wrongPromiseOnly, Decl(conditionalAsyncAwait.ts, 17, 51))
+>Promise : Symbol(Promise, Decl(lib.es5.d.ts, --, --), Decl(lib.es2015.iterable.d.ts, --, --), Decl(lib.es2015.promise.d.ts, --, --), Decl(lib.es2015.symbol.wellknown.d.ts, --, --), Decl(lib.es2018.promise.d.ts, --, --))
+
+async? function* wrongGenerator() { yield 1; }
+>wrongGenerator : Symbol(wrongGenerator, Decl(conditionalAsyncAwait.ts, 18, 65))
+
+const nestedGeneric: number | Promise<number> = read<Promise<number>>(Promise.resolve(1));
+>nestedGeneric : Symbol(nestedGeneric, Decl(conditionalAsyncAwait.ts, 21, 5))
+>Promise : Symbol(Promise, Decl(lib.es5.d.ts, --, --), Decl(lib.es2015.iterable.d.ts, --, --), Decl(lib.es2015.promise.d.ts, --, --), Decl(lib.es2015.symbol.wellknown.d.ts, --, --), Decl(lib.es2018.promise.d.ts, --, --))
+>read : Symbol(read, Decl(conditionalAsyncAwait.ts, 0, 0))
+>Promise : Symbol(Promise, Decl(lib.es5.d.ts, --, --), Decl(lib.es2015.iterable.d.ts, --, --), Decl(lib.es2015.promise.d.ts, --, --), Decl(lib.es2015.symbol.wellknown.d.ts, --, --), Decl(lib.es2018.promise.d.ts, --, --))
+>Promise.resolve : Symbol(PromiseConstructor.resolve, Decl(lib.es2015.promise.d.ts, --, --), Decl(lib.es2015.promise.d.ts, --, --), Decl(lib.es2015.promise.d.ts, --, --))
+>Promise : Symbol(Promise, Decl(lib.es5.d.ts, --, --), Decl(lib.es2015.iterable.d.ts, --, --), Decl(lib.es2015.promise.d.ts, --, --), Decl(lib.es2015.symbol.wellknown.d.ts, --, --), Decl(lib.es2018.promise.d.ts, --, --))
+>resolve : Symbol(PromiseConstructor.resolve, Decl(lib.es2015.promise.d.ts, --, --), Decl(lib.es2015.promise.d.ts, --, --), Decl(lib.es2015.promise.d.ts, --, --))
+

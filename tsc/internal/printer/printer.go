@@ -120,6 +120,7 @@ type Printer struct {
 	emitContext                       *EmitContext
 	currentSourceFile                 *ast.SourceFile
 	uniqueHelperNames                 map[string]*ast.IdentifierNode
+	inlineHelperNames                 map[string]*ast.IdentifierNode
 	externalHelpersModuleName         *ast.IdentifierNode
 	nextListElementPos                int
 	writer                            EmitTextWriter
@@ -1154,6 +1155,10 @@ func (p *Printer) getUniqueHelperName(name string) *ast.IdentifierNode {
 }
 
 func (p *Printer) emitIdentifierReference(node *ast.Identifier) {
+	if p.emitContext.EmitFlags(node.AsNode())&EFHelperName != 0 && IsInlineHelperName(node.Text) {
+		p.write(p.inlineHelperName(node.Text))
+		return
+	}
 	if (p.externalHelpersModuleName != nil || p.uniqueHelperNames != nil) &&
 		p.emitContext.EmitFlags(node.AsNode())&EFHelperName != 0 {
 		if p.externalHelpersModuleName != nil {
@@ -1367,7 +1372,7 @@ func (p *Printer) emitModifierList(parentNode *ast.Node, modifiers *ast.Modifier
 
 	if core.Every(modifiers.Nodes, ast.IsModifier) {
 		// if all modifier-likes are `Modifier`, simply emit the list as modifiers.
-		p.emitList((*Printer).emitKeywordNode, parentNode, &modifiers.NodeList, LFModifiers)
+		p.emitList((*Printer).emitModifierLike, parentNode, &modifiers.NodeList, LFModifiers)
 	} else if core.Every(modifiers.Nodes, ast.IsDecorator) {
 		if !allowDecorators {
 			return parentNode.Pos()
@@ -1509,6 +1514,9 @@ func (p *Printer) emitModifierLike(node *ast.ModifierLike) {
 		p.emitDecorator(node.AsDecorator())
 	case ast.IsModifier(node):
 		p.emitKeywordNode(node)
+		if node.Kind == ast.KindAsyncKeyword && node.Flags&ast.NodeFlagsConditional != 0 {
+			p.writePunctuation("?")
+		}
 	default:
 		panic(fmt.Sprintf("unhandled ModifierLike: %v", node.Kind))
 	}
@@ -2729,6 +2737,9 @@ func (p *Printer) emitVoidExpression(node *ast.VoidExpression) {
 func (p *Printer) emitAwaitExpression(node *ast.AwaitExpression) {
 	state := p.enterNode(node.AsNode())
 	p.emitToken(ast.KindAwaitKeyword, node.Pos(), WriteKindKeyword, node.AsNode())
+	if node.Flags&ast.NodeFlagsConditional != 0 {
+		p.writePunctuation("?")
+	}
 	p.writeSpace()
 	p.emitExpression(node.Expression, ast.OperatorPrecedenceUnary)
 	p.exitNode(node.AsNode(), state)
@@ -4644,12 +4655,16 @@ func (p *Printer) emitHelpers(node *ast.Node) bool {
 				// Skip the helper if it can be skipped and the noEmitHelpers compiler
 				// option is set, or if it can be imported and the importHelpers compiler
 				// option is set.
-				if shouldSkip {
+				if shouldSkip && (!helper.Inline || p.Options.NoEmitHelpers) {
 					continue
 				}
 			}
 			if helper.TextCallback != nil {
-				p.writeLines(helper.TextCallback(p.makeFileLevelOptimisticUniqueName))
+				if helper.Inline {
+					p.writeLines(helper.TextCallback(p.inlineHelperName))
+				} else {
+					p.writeLines(helper.TextCallback(p.makeFileLevelOptimisticUniqueName))
+				}
 			} else {
 				p.writeLines(helper.Text)
 			}
@@ -5061,6 +5076,7 @@ func (p *Printer) EmitSourceFile(sourceFile *ast.SourceFile) string {
 func (p *Printer) setSourceFile(sourceFile *ast.SourceFile) {
 	p.currentSourceFile = sourceFile
 	p.uniqueHelperNames = nil
+	p.inlineHelperNames = nil
 	p.externalHelpersModuleName = nil
 	if sourceFile != nil {
 		if p.emitContext.EmitFlags(p.emitContext.MostOriginal(sourceFile.AsNode()))&EFExternalHelpers != 0 {
@@ -5077,6 +5093,7 @@ func (p *Printer) Write(node *ast.Node, sourceFile *ast.SourceFile, writer EmitT
 	savedCurrentSourceFile := p.currentSourceFile
 	savedWriter := p.writer
 	savedUniqueHelperNames := p.uniqueHelperNames
+	savedInlineHelperNames := p.inlineHelperNames
 	savedSourceMapsDisabled := p.sourceMapsDisabled
 	savedSourceMapGenerator := p.sourceMapGenerator
 	savedSourceMapSource := p.sourceMapSource
@@ -5277,6 +5294,7 @@ func (p *Printer) Write(node *ast.Node, sourceFile *ast.SourceFile, writer EmitT
 	p.currentSourceFile = savedCurrentSourceFile
 	p.writer = savedWriter
 	p.uniqueHelperNames = savedUniqueHelperNames
+	p.inlineHelperNames = savedInlineHelperNames
 	p.sourceMapsDisabled = savedSourceMapsDisabled
 	p.sourceMapGenerator = savedSourceMapGenerator
 	p.sourceMapSource = savedSourceMapSource
@@ -6338,4 +6356,16 @@ func getClosingBracket(format ListFormat) string {
 	default:
 		panic(fmt.Sprintf("Unexpected bracket: %v", format&LFBracketsMask))
 	}
+}
+
+func (p *Printer) inlineHelperName(name string) string {
+	if p.inlineHelperNames == nil {
+		p.inlineHelperNames = make(map[string]*ast.IdentifierNode)
+	}
+	helper := p.inlineHelperNames[name]
+	if helper == nil {
+		helper = p.emitContext.Factory.NewUniqueNameEx(name, AutoGenerateOptions{Flags: GeneratedIdentifierFlagsFileLevel | GeneratedIdentifierFlagsOptimistic | GeneratedIdentifierFlagsReservedInNestedScopes})
+		p.inlineHelperNames[name] = helper
+	}
+	return p.nameGenerator.GenerateName(helper)
 }
