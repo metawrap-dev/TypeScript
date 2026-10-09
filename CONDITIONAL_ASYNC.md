@@ -1,4 +1,79 @@
-# Conditional async and await
+# Request for comments: conditional async and await
+
+## The problem
+
+Buffered code often performs many small operations that complete immediately
+in memory. Only occasionally does the buffer fill and require an asynchronous
+flush. A useful API therefore returns `void | Promise<void>`: no Promise when
+the write fits, and a Promise when the caller must wait for flushing before
+continuing. Similar patterns occur with cached values and composable stream
+processing.
+
+Today, preserving the synchronous path at each call site means repeatedly
+introducing temporary variables and conditional awaits. For example, inside
+an ordinary async function, writing the parts of a record becomes:
+
+```ts
+const headerResult = buffer.write(header);
+if (headerResult) await headerResult;
+
+const payloadResult = buffer.write(payload);
+if (payloadResult) await payloadResult;
+
+const trailerResult = buffer.write(trailer);
+if (trailerResult) await trailerResult;
+```
+
+This check is appropriate for the specific `void | Promise<void>` contract;
+general value-or-thenable APIs need a proper thenable check instead. The
+temporary variables avoid evaluating each operation twice, but repeating
+`const temp = ...; if (temp) await temp` throughout a pipeline is painful and
+ugly. It buries the sequence of actual work under bookkeeping and makes every
+new operation another opportunity to forget the completion check.
+
+Writing `await buffer.write(...)` is concise, but introduces a suspension even
+when the result is `undefined`. Writing conditional awaits manually avoids
+those suspensions, yet an ordinary async enclosing function still always
+returns a Promise. Preserving synchronous completion through several layers
+requires further branching, explicit continuations, or a generator runner.
+
+The proposed spelling makes the intended sequence visible:
+
+```ts
+await? buffer.write(header);
+await? buffer.write(payload);
+await? buffer.write(trailer);
+```
+
+Inside an `async?` function, these operations can complete synchronously all
+the way back to its caller, or return a Promise when an actual suspension is
+needed. The aim is to express a deliberately mixed completion contract once,
+without duplicating the synchronous and asynchronous algorithms or scattering
+temporary-variable checks through every layer. This changes observable timing;
+it is not a transparent replacement for ordinary async/await.
+
+## What feedback we are asking for
+
+This document is a **request for comments**, backed by an experimental compiler
+implementation so the semantics and emitted code can be examined and tested.
+The design is open to revision. We want feedback on:
+
+- Whether buffered writes, caching, and similar workloads justify this syntax
+  rather than ordinary async functions, manual branching, or library helpers.
+- Whether `async?` and `await?` communicate conditional completion clearly,
+  and whether a different spelling or contract would be easier to reason about.
+- Whether the specified timing, reentrancy, error, and thenable behavior is
+  acceptable, and which concrete examples reveal unsafe or surprising behavior.
+- Whether the types, declarations, generated code, and tooling constraints
+  make this useful in practice, and what implementation cases we have missed.
+- Measurements on real workloads, including comparisons with hand-written
+  branching, ordinary async/await, and alternative library approaches.
+
+The historical-objections section below records both our mitigations and the
+tradeoffs that remain. We are asking reviewers to evaluate those tradeoffs,
+not assuming that an implementation resolves the language-design objections.
+
+## Proposed behavior
 
 This experimental compiler fork adds adjacent `async?` and `await?` suffixes.
 It is based on microsoft/TypeScript main at
