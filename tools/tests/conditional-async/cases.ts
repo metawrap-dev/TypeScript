@@ -104,3 +104,12 @@ export async? function directNameCollision(_resume_1: number, _pending_1: number
 export async? function directPromiseShadow(Promise: number, writer: DirectWriter): void | Promise<void> {
     await? writer.write(Promise);
 }
+
+// Larger sequences retain shared continuations to bound emitted code size.
+export async? function directFive(writer: DirectWriter): void | Promise<void> {
+    await? writer.write(0);
+    await? writer.write(1);
+    await? writer.write(2);
+    await? writer.write(3);
+    await? writer.write(4);
+}

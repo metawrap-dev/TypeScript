@@ -111,3 +111,35 @@ export async? function value(writer: Writer) { return await? writer.write(0); }
 export const __conditionalContinue = 1;
 >__conditionalContinue : Symbol(__conditionalContinue, Decl(conditionalAsyncContinuation.ts, 25, 12))
 
+export async? function five(writer: Writer): void | Promise<void> {
+>five : Symbol(five, Decl(conditionalAsyncContinuation.ts, 25, 39))
+>writer : Symbol(writer, Decl(conditionalAsyncContinuation.ts, 27, 28))
+>Writer : Symbol(Writer, Decl(conditionalAsyncContinuation.ts, 0, 0))
+>Promise : Symbol(Promise, Decl(lib.es5.d.ts, --, --), Decl(lib.es2015.iterable.d.ts, --, --), Decl(lib.es2015.promise.d.ts, --, --), Decl(lib.es2015.symbol.wellknown.d.ts, --, --), Decl(lib.es2018.promise.d.ts, --, --))
+
+    await? writer.write(0);
+>writer.write : Symbol(Writer.write, Decl(conditionalAsyncContinuation.ts, 0, 18))
+>writer : Symbol(writer, Decl(conditionalAsyncContinuation.ts, 27, 28))
+>write : Symbol(Writer.write, Decl(conditionalAsyncContinuation.ts, 0, 18))
+
+    await? writer.write(1);
+>writer.write : Symbol(Writer.write, Decl(conditionalAsyncContinuation.ts, 0, 18))
+>writer : Symbol(writer, Decl(conditionalAsyncContinuation.ts, 27, 28))
+>write : Symbol(Writer.write, Decl(conditionalAsyncContinuation.ts, 0, 18))
+
+    await? writer.write(2);
+>writer.write : Symbol(Writer.write, Decl(conditionalAsyncContinuation.ts, 0, 18))
+>writer : Symbol(writer, Decl(conditionalAsyncContinuation.ts, 27, 28))
+>write : Symbol(Writer.write, Decl(conditionalAsyncContinuation.ts, 0, 18))
+
+    await? writer.write(3);
+>writer.write : Symbol(Writer.write, Decl(conditionalAsyncContinuation.ts, 0, 18))
+>writer : Symbol(writer, Decl(conditionalAsyncContinuation.ts, 27, 28))
+>write : Symbol(Writer.write, Decl(conditionalAsyncContinuation.ts, 0, 18))
+
+    await? writer.write(4);
+>writer.write : Symbol(Writer.write, Decl(conditionalAsyncContinuation.ts, 0, 18))
+>writer : Symbol(writer, Decl(conditionalAsyncContinuation.ts, 27, 28))
+>write : Symbol(Writer.write, Decl(conditionalAsyncContinuation.ts, 0, 18))
+}
+

@@ -28,3 +28,11 @@ export async? function capture(writer: Writer): void | Promise<void> {
 }
 export async? function value(writer: Writer) { return await? writer.write(0); }
 export const __conditionalContinue = 1;
+
+export async? function five(writer: Writer): void | Promise<void> {
+    await? writer.write(0);
+    await? writer.write(1);
+    await? writer.write(2);
+    await? writer.write(3);
+    await? writer.write(4);
+}

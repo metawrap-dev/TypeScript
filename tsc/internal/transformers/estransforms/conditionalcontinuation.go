@@ -29,6 +29,12 @@ func (tx *asyncTransformer) tryDirectConditionalBody(node *ast.Node) *ast.Node {
 			return nil
 		}
 	}
+	// Small bodies can duplicate the suffix on suspension branches, avoiding
+	// all callback creation on the synchronous path. Bound code growth: larger
+	// sequences retain the shared-continuation lowering below.
+	if len(statements) <= 4 {
+		return tx.Factory().NewBlock(tx.Factory().NewNodeList(tx.directLazySequence(statements)), true)
+	}
 	f := tx.Factory()
 	// Each continuation shares the original parameter scope and lexical this.
 	// No generator object, runner, or synchronous resumption protocol is needed.
@@ -55,6 +61,23 @@ func (tx *asyncTransformer) tryDirectConditionalBody(node *ast.Node) *ast.Node {
 		}
 	}
 	return f.NewBlock(f.NewNodeList(append(declarations, entry...)), true)
+}
+
+// Only one suffix executes: inline for a plain value, inside an arrow after
+// suspension. The four-statement limit bounds duplicated output size.
+func (tx *asyncTransformer) directLazySequence(statements []*ast.Node) []*ast.Node {
+	if len(statements) == 0 {
+		return nil
+	}
+	f := tx.Factory()
+	pending := f.NewUniqueName("_pending")
+	operand := tx.Visitor().VisitNode(directConditionalOperand(statements[0]))
+	callback := tx.directArrow(tx.directLazySequence(statements[1:]))
+	code := []*ast.Node{
+		tx.directVariable(pending, f.NewConditionalAwaitHelper(operand)),
+		f.NewIfStatement(pending, f.NewReturnStatement(f.NewConditionalContinueHelper(pending, callback)), nil),
+	}
+	return append(code, tx.directLazySequence(statements[1:])...)
 }
 
 func directConditionalOperand(statement *ast.Node) *ast.Node {
@@ -120,20 +143,33 @@ func (tx *asyncTransformer) tryDirectConditionalLoop(loop *ast.ForStatement) *as
 	f := tx.Factory()
 	resume := f.NewUniqueName("_resume")
 	pending := f.NewUniqueName("_pending")
+	resumedPending := f.NewUniqueName("_pending")
 	increment := tx.Visitor().VisitNode(loop.Incrementor)
-	// Increment only after fulfillment. On rejection no later write is performed.
-	callback := tx.directArrow([]*ast.Node{f.NewExpressionStatement(increment), f.NewReturnStatement(tx.directCall(resume))})
+	condition := tx.Visitor().VisitNode(loop.Condition)
+	operand = tx.Visitor().VisitNode(operand)
+	// The callback is created only on the first suspension and reused for later
+	// flushes. Every invocation increments the loop after fulfillment, then
+	// drains synchronous iterations inline until the next actual suspension.
+	resumedBody := []*ast.Node{
+		tx.directVariable(resumedPending, f.NewConditionalAwaitHelper(operand)),
+		f.NewIfStatement(resumedPending, f.NewReturnStatement(f.NewConditionalContinueHelper(resumedPending, resume)), nil),
+		f.NewExpressionStatement(increment),
+	}
+	callback := tx.directArrow([]*ast.Node{
+		f.NewExpressionStatement(increment),
+		f.NewWhileStatement(condition, f.NewBlock(f.NewNodeList(resumedBody), true)),
+	})
 	body := []*ast.Node{
-		tx.directVariable(pending, f.NewConditionalAwaitHelper(tx.Visitor().VisitNode(operand))),
-		f.NewIfStatement(pending, f.NewReturnStatement(f.NewConditionalContinueHelper(pending, callback)), nil),
+		tx.directVariable(pending, f.NewConditionalAwaitHelper(operand)),
+		f.NewIfStatement(pending, f.NewBlock(f.NewNodeList([]*ast.Node{
+			tx.directVariable(resume, callback),
+			f.NewReturnStatement(f.NewConditionalContinueHelper(pending, resume)),
+		}), true), nil),
 		f.NewExpressionStatement(increment),
 	}
 	code := []*ast.Node{
 		f.NewVariableStatement(nil, tx.Visitor().VisitNode(loop.Initializer)),
-		tx.directVariable(resume, tx.directArrow([]*ast.Node{
-			f.NewWhileStatement(tx.Visitor().VisitNode(loop.Condition), f.NewBlock(f.NewNodeList(body), true)),
-		})),
-		f.NewReturnStatement(tx.directCall(resume)),
+		f.NewWhileStatement(condition, f.NewBlock(f.NewNodeList(body), true)),
 	}
 	// Retain the original for-loop's block scope, including parameter shadowing.
 	return f.NewBlock(f.NewNodeList([]*ast.Node{f.NewBlock(f.NewNodeList(code), true)}), true)

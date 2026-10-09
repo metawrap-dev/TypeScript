@@ -106,3 +106,14 @@ retained, and the RFC reports all strategies from each batch separately.
 The manual sync continuation strategy explicitly resumes ordinary control flow
 via `pending.then(resume)` only on a flush. It relies on undefined/native-Promise
 results and is not a full implementation of the proposal's thenable semantics.
+
+## Delayed callback follow-up
+
+`lazy-run-{1,2,3}.json` and `lazy-summary.json` repeat the same workload after
+short sequences (up to four awaits) were changed to inline synchronous work and
+create callbacks only inside thenable branches. Supported loops run inline
+until their first suspension, then create and reuse one resume callback. Larger
+sequences retain shared continuations to bound output size. Use these paths with
+the same reproduction commands. The RFC retains all prior measurement batches
+and reports the latest all-strategy tables, raw ranges, and code-size tradeoff.
+Compilation and runtime correctness checks completed before these measurement runs.

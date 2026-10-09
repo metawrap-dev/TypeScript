@@ -22,3 +22,8 @@ method this, loop increment timing and shadowing, generated names and helper
 collisions, source Promise shadowing, no Promise allocation on the synchronous
 path, and fallback for captured iteration bindings. Compiler baselines cover
 both continuation and generator output across four targets.
+
+Short sequences create callbacks only on suspension branches; supported loops
+create one reusable resume callback only at their first suspension. Tests also
+exercise a five-await sequence, which retains shared continuations to bound
+code growth, on both wholly synchronous and wholly asynchronous paths.

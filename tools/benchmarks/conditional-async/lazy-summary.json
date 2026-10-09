@@ -1,0 +1,278 @@
+{
+  "processes": 3,
+  "records": 100000,
+  "writes": 300000,
+  "bytes": 4800000,
+  "rows": [
+    {
+      "layout": "flat",
+      "mode": "memory",
+      "strategy": "ordinary async + await",
+      "samples": 27,
+      "medianMs": 20.15906099999995,
+      "minMs": 16.989806000000044,
+      "maxMs": 27.586444999999912
+    },
+    {
+      "layout": "flat",
+      "mode": "memory",
+      "strategy": "ordinary async + manual checks",
+      "samples": 27,
+      "medianMs": 2.43889200000001,
+      "minMs": 2.000118000000043,
+      "maxMs": 11.428256999999917
+    },
+    {
+      "layout": "flat",
+      "mode": "memory",
+      "strategy": "ordinary async + await?",
+      "samples": 27,
+      "medianMs": 2.47348599999998,
+      "minMs": 2.0462740000000395,
+      "maxMs": 5.991336000000047
+    },
+    {
+      "layout": "flat",
+      "mode": "memory",
+      "strategy": "async? + await?",
+      "samples": 27,
+      "medianMs": 2.7404390000000376,
+      "minMs": 2.0267769999999246,
+      "maxMs": 8.705066999999985
+    },
+    {
+      "layout": "flat",
+      "mode": "memory",
+      "strategy": "manual sync continuation",
+      "samples": 27,
+      "medianMs": 3.6980740000000196,
+      "minMs": 2.127713999999969,
+      "maxMs": 5.363158999999996
+    },
+    {
+      "layout": "flat",
+      "mode": "microtask",
+      "strategy": "ordinary async + await",
+      "samples": 27,
+      "medianMs": 19.414125000000013,
+      "minMs": 16.45148899999981,
+      "maxMs": 72.62506899999994
+    },
+    {
+      "layout": "flat",
+      "mode": "microtask",
+      "strategy": "ordinary async + manual checks",
+      "samples": 27,
+      "medianMs": 3.8249969999999394,
+      "minMs": 3.0675840000001244,
+      "maxMs": 14.78855899999985
+    },
+    {
+      "layout": "flat",
+      "mode": "microtask",
+      "strategy": "ordinary async + await?",
+      "samples": 27,
+      "medianMs": 4.270078000000012,
+      "minMs": 3.441716000000042,
+      "maxMs": 8.180065000000013
+    },
+    {
+      "layout": "flat",
+      "mode": "microtask",
+      "strategy": "async? + await?",
+      "samples": 27,
+      "medianMs": 4.577376999999842,
+      "minMs": 3.8226059999999507,
+      "maxMs": 9.380237999999963
+    },
+    {
+      "layout": "flat",
+      "mode": "microtask",
+      "strategy": "manual sync continuation",
+      "samples": 27,
+      "medianMs": 2.530283999999938,
+      "minMs": 2.143939000000046,
+      "maxMs": 5.56995599999982
+    },
+    {
+      "layout": "flat",
+      "mode": "file",
+      "strategy": "ordinary async + await",
+      "samples": 27,
+      "medianMs": 25.08845999999994,
+      "minMs": 20.955198999999993,
+      "maxMs": 63.31180899999981
+    },
+    {
+      "layout": "flat",
+      "mode": "file",
+      "strategy": "ordinary async + manual checks",
+      "samples": 27,
+      "medianMs": 9.538667000000032,
+      "minMs": 7.127458999999817,
+      "maxMs": 20.47437600000012
+    },
+    {
+      "layout": "flat",
+      "mode": "file",
+      "strategy": "ordinary async + await?",
+      "samples": 27,
+      "medianMs": 10.972418999999718,
+      "minMs": 7.9804730000000745,
+      "maxMs": 57.70398100000011
+    },
+    {
+      "layout": "flat",
+      "mode": "file",
+      "strategy": "async? + await?",
+      "samples": 27,
+      "medianMs": 10.665323000000171,
+      "minMs": 8.555969999999888,
+      "maxMs": 38.92576700000018
+    },
+    {
+      "layout": "flat",
+      "mode": "file",
+      "strategy": "manual sync continuation",
+      "samples": 27,
+      "medianMs": 8.39652500000011,
+      "minMs": 6.457883000000038,
+      "maxMs": 17.65743599999996
+    },
+    {
+      "layout": "layered",
+      "mode": "memory",
+      "strategy": "ordinary async + await",
+      "samples": 27,
+      "medianMs": 27.52294400000028,
+      "minMs": 24.200510000000122,
+      "maxMs": 39.26674200000025
+    },
+    {
+      "layout": "layered",
+      "mode": "memory",
+      "strategy": "ordinary async + manual checks",
+      "samples": 27,
+      "medianMs": 9.541578999999729,
+      "minMs": 7.8232270000003155,
+      "maxMs": 23.792981000000054
+    },
+    {
+      "layout": "layered",
+      "mode": "memory",
+      "strategy": "ordinary async + await?",
+      "samples": 27,
+      "medianMs": 23.47548999999981,
+      "minMs": 19.033417999999983,
+      "maxMs": 43.06266800000003
+    },
+    {
+      "layout": "layered",
+      "mode": "memory",
+      "strategy": "async? + await?",
+      "samples": 27,
+      "medianMs": 6.044341000000259,
+      "minMs": 4.958170999999766,
+      "maxMs": 9.976110999999946
+    },
+    {
+      "layout": "layered",
+      "mode": "memory",
+      "strategy": "manual sync continuation",
+      "samples": 27,
+      "medianMs": 5.943873000000167,
+      "minMs": 3.728726000000279,
+      "maxMs": 18.26209999999992
+    },
+    {
+      "layout": "layered",
+      "mode": "microtask",
+      "strategy": "ordinary async + await",
+      "samples": 27,
+      "medianMs": 26.19199899999967,
+      "minMs": 22.84012100000018,
+      "maxMs": 46.9125210000002
+    },
+    {
+      "layout": "layered",
+      "mode": "microtask",
+      "strategy": "ordinary async + manual checks",
+      "samples": 27,
+      "medianMs": 9.334375000000364,
+      "minMs": 7.416369999999915,
+      "maxMs": 20.812184999999772
+    },
+    {
+      "layout": "layered",
+      "mode": "microtask",
+      "strategy": "ordinary async + await?",
+      "samples": 27,
+      "medianMs": 21.37643500000013,
+      "minMs": 17.978567999999996,
+      "maxMs": 39.63027099999999
+    },
+    {
+      "layout": "layered",
+      "mode": "microtask",
+      "strategy": "async? + await?",
+      "samples": 27,
+      "medianMs": 5.38847000000078,
+      "minMs": 4.736221000000114,
+      "maxMs": 9.100637000000006
+    },
+    {
+      "layout": "layered",
+      "mode": "microtask",
+      "strategy": "manual sync continuation",
+      "samples": 27,
+      "medianMs": 4.011347999999998,
+      "minMs": 3.324333000000024,
+      "maxMs": 10.504293999999845
+    },
+    {
+      "layout": "layered",
+      "mode": "file",
+      "strategy": "ordinary async + await",
+      "samples": 27,
+      "medianMs": 33.60315499999979,
+      "minMs": 28.536352999999508,
+      "maxMs": 47.43582199999946
+    },
+    {
+      "layout": "layered",
+      "mode": "file",
+      "strategy": "ordinary async + manual checks",
+      "samples": 27,
+      "medianMs": 15.228080000000773,
+      "minMs": 12.369988999999805,
+      "maxMs": 24.226956999999857
+    },
+    {
+      "layout": "layered",
+      "mode": "file",
+      "strategy": "ordinary async + await?",
+      "samples": 27,
+      "medianMs": 29.622886000000108,
+      "minMs": 23.53701799999999,
+      "maxMs": 47.69122799999968
+    },
+    {
+      "layout": "layered",
+      "mode": "file",
+      "strategy": "async? + await?",
+      "samples": 27,
+      "medianMs": 11.2497570000005,
+      "minMs": 9.439502999999604,
+      "maxMs": 21.49638700000014
+    },
+    {
+      "layout": "layered",
+      "mode": "file",
+      "strategy": "manual sync continuation",
+      "samples": 27,
+      "medianMs": 10.376398999999765,
+      "minMs": 7.910280999999486,
+      "maxMs": 15.515531999999439
+    }
+  ]
+}

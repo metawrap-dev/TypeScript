@@ -60,12 +60,12 @@ layered `async?` functions expose substantial generator overhead.** The original
 results below motivated a lowering optimization; the follow-up measurements
 and explanation immediately after these tables describe the updated output.
 
-**Latest result: direct continuations reduce layered in-memory `async?` from
-124.95 ms to 9.00 ms.** In the same new batch, ordinary async/await takes
-30.01 ms and manual continuations take 6.44 ms. The current lowering wins
-against ordinary async/await in all three layered scenarios, while manual
-continuations remain faster. The full follow-up tables below preserve all
-strategies and the earlier batches for comparison.
+**Latest result: delaying callback creation reduces layered in-memory `async?`
+from 9.00 ms to 6.04 ms.** In the same new batch, ordinary async/await takes
+27.52 ms and manual continuations take 5.94 ms. The generated and manual
+in-memory medians are now within about 2%; this is not a statistical equivalence
+claim. The complete latest tables and earlier batches below show the gains,
+remaining costs, and variation.
 
 “Manual sync continuation” is hand-written JavaScript control flow: run ordinary
 calls and loops while results are `undefined`; when a write returns a Promise,
@@ -240,7 +240,7 @@ batches, so these numbers support an implementation improvement, not a precise
 universal speedup. See `optimized-run-{1,2,3}.json` and `optimized-summary.json`
 under `tools/benchmarks/conditional-async/` for all raw samples and ranges.
 
-### Direct continuation generation: latest measurements
+### First direct continuation generation: measurements
 
 We now generate ordinary continuations for the benchmark's three-write record
 function and ordinary resume loops for its outer/flat loops. The synchronous
@@ -250,7 +250,7 @@ calls the Promise continuation helper. This is the same broad execution pattern
 as the manual implementation, with the proposal's broader thenable semantics.
 
 The unchanged workload was rerun in three fresh processes, with 27 pooled
-samples per case. **These are all strategies in the latest batch:**
+samples per case. **These are all strategies in the first direct-generation batch:**
 
 **Flat writer**
 
@@ -294,6 +294,70 @@ trials range from 10.24 to 95.76 ms. Environment and method are unchanged;
 these are synthetic Node workloads, not native-engine predictions. See
 `continuation-run-{1,2,3}.json` and `continuation-summary.json` alongside the
 previous results for all raw timings and ranges.
+
+### Delayed callback creation: latest measurements
+
+For short sequences of up to four discarded awaits, synchronous work is now
+inline. Each thenable branch creates an arrow for the remaining work; the
+plain branch continues inline. This duplicates suffix code across branches,
+so the optimization is limited to four awaits. Longer direct sequences retain
+shared callbacks to bound code size. Supported loops also start inline: the
+first suspension creates one resume callback, which is reused for subsequent
+flushes. Thus the motivating three-write record and its outer loop create **no
+continuation closures on wholly synchronous calls**. This does not claim zero
+engine allocations: activation/context storage can still cost memory.
+
+The same workload and settings were rerun in three fresh processes, with
+27 pooled samples per case and no discarded observations. **All strategies in
+the latest batch:**
+
+**Flat writer**
+
+| Implementation | In memory | Microtask flushes | File writes |
+| --- | ---: | ---: | ---: |
+| ordinary async + await | 20.16 ms | 19.41 ms | 25.09 ms |
+| ordinary async + manual checks | 2.44 ms | 3.82 ms | 9.54 ms |
+| ordinary async + await? | 2.47 ms | 4.27 ms | 10.97 ms |
+| async? + await? | 2.74 ms | 4.58 ms | 10.67 ms |
+| manual sync continuation | 3.70 ms | 2.53 ms | 8.40 ms |
+
+**Layered writer**
+
+| Implementation | In memory | Microtask flushes | File writes |
+| --- | ---: | ---: | ---: |
+| ordinary async + await | 27.52 ms | 26.19 ms | 33.60 ms |
+| ordinary async + manual checks | 9.54 ms | 9.33 ms | 15.23 ms |
+| ordinary async + await? | 23.48 ms | 21.38 ms | 29.62 ms |
+| async? + await? | 6.04 ms | 5.39 ms | 11.25 ms |
+| manual sync continuation | 5.94 ms | 4.01 ms | 10.38 ms |
+
+**`async?` before/after delayed callback creation:**
+
+| Layout / sink | First direct output | Delayed callbacks | Change in elapsed time |
+| --- | ---: | ---: | ---: |
+| flat / memory | 3.20 ms | 2.74 ms | -14.5% |
+| flat / microtask | 4.82 ms | 4.58 ms | -5.1% |
+| flat / file | 10.18 ms | 10.67 ms | +4.8% |
+| layered / memory | 9.00 ms | 6.04 ms | -32.8% |
+| layered / microtask | 6.86 ms | 5.39 ms | -21.4% |
+| layered / file | 12.61 ms | 11.25 ms | -10.8% |
+
+The reduction is largest in the layered in-memory case, where every record
+previously created shared continuation closures. The same-batch manual result
+is now close in memory, while it remains faster with periodic flushes. The flat
+file median increased slightly; this change does not win every measured case.
+The before/after percentages compare separate batches and should not be read as
+precise causal estimates. Other strategies also moved between batches, and
+updated layered file samples span 9.44–21.50 ms. Independent replication is still
+needed. All raw data and ranges are retained in `lazy-run-{1,2,3}.json` and
+`lazy-summary.json` under `tools/benchmarks/conditional-async/`.
+
+The semantics remain unchanged: operand and getter evaluation, receiver
+preservation, nested thenable assimilation, discarded fulfillment, rejection,
+lexical `this`, and post-fulfillment loop increments retain their behavior.
+Tests cover suspension at each record write, all-thenable sequences, loop
+resumption, no Promise allocation on plain paths, and the retained shared
+continuation path for a five-await sequence.
 
 ## What feedback we are asking for
 
@@ -371,7 +435,9 @@ and single-await for loops; other bodies use generators and a small runner,
 using TypeScript's existing preservation of lexical bindings and control flow.
 Plain conditional awaits allocate no probe/yield packets or Promise and
 introduce no microtask. The fallback still allocates a generator; the direct
-path allocates ordinary continuation closures instead. Performance depends on
+path uses ordinary continuations instead. Short sequences and supported loops
+create callbacks only after an actual suspension is required; larger sequences
+still allocate shared callbacks up front. Performance depends on
 body shape and workload; the measurements above distinguish those paths.
 
 The new helpers are emitted inline even with `--importHelpers`, because released
@@ -463,8 +529,13 @@ as its body. Parameters must be simple identifiers without defaults or rest.
 Nested awaits/functions/classes, direct eval, `arguments`, `super`, and
 `new.target` in the relevant expressions retain the generator fallback, as do
 value-consuming awaits, explicit returns, branches, `try`/`finally`, and other
-loop shapes. The limit bounds synchronous continuation call depth. No type
-annotation changes which runtime semantics apply.
+loop shapes. Sequences of one to four awaits inline synchronous work and create
+callbacks only on suspension branches. Their suffixes are duplicated across
+branches, so this optimization is capped at four awaits to bound code growth.
+Sequences of five to 32 awaits retain shared continuations; the 32-statement
+limit bounds synchronous call depth. A supported loop runs inline initially,
+then creates one reusable callback on its first suspension. No type annotation
+changes which runtime semantics apply.
 
 For example, this source:
 
@@ -491,46 +562,65 @@ var __conditionalContinue = (this && this.__conditionalContinue) || function (pe
     return Promise.resolve(pending).then(resume);
 };
 function writeRecord(chunks) {
-    const _resume_1 = () => {
-        const _pending_2 = __conditionalAwait(writeChunk(chunks[2]));
-        if (_pending_2)
-            return __conditionalContinue(_pending_2, () => {
-            });
-    };
-    const _resume_2 = () => {
-        const _pending_3 = __conditionalAwait(writeChunk(chunks[1]));
-        if (_pending_3)
-            return __conditionalContinue(_pending_3, _resume_1);
-        return _resume_1();
-    };
     const _pending_1 = __conditionalAwait(writeChunk(chunks[0]));
     if (_pending_1)
-        return __conditionalContinue(_pending_1, _resume_2);
-    return _resume_2();
+        return __conditionalContinue(_pending_1, () => {
+            const _pending_4 = __conditionalAwait(writeChunk(chunks[1]));
+            if (_pending_4)
+                return __conditionalContinue(_pending_4, () => {
+                    const _pending_6 = __conditionalAwait(writeChunk(chunks[2]));
+                    if (_pending_6)
+                        return __conditionalContinue(_pending_6, () => {
+                        });
+                });
+            const _pending_5 = __conditionalAwait(writeChunk(chunks[2]));
+            if (_pending_5)
+                return __conditionalContinue(_pending_5, () => {
+                });
+        });
+    const _pending_2 = __conditionalAwait(writeChunk(chunks[1]));
+    if (_pending_2)
+        return __conditionalContinue(_pending_2, () => {
+            const _pending_7 = __conditionalAwait(writeChunk(chunks[2]));
+            if (_pending_7)
+                return __conditionalContinue(_pending_7, () => {
+                });
+        });
+    const _pending_3 = __conditionalAwait(writeChunk(chunks[2]));
+    if (_pending_3)
+        return __conditionalContinue(_pending_3, () => {
+        });
 }
 function writeMany(chunks) {
     {
         let i = 0;
-        const _resume_3 = () => {
-            while (i < chunks.length) {
-                const _pending_4 = __conditionalAwait(writeChunk(chunks[i]));
-                if (_pending_4)
-                    return __conditionalContinue(_pending_4, () => {
+        while (i < chunks.length) {
+            const _pending_8 = __conditionalAwait(writeChunk(chunks[i]));
+            if (_pending_8) {
+                const _resume_1 = () => {
+                    i++;
+                    while (i < chunks.length) {
+                        const _pending_9 = __conditionalAwait(writeChunk(chunks[i]));
+                        if (_pending_9)
+                            return __conditionalContinue(_pending_9, _resume_1);
                         i++;
-                        return _resume_3();
-                    });
-                i++;
+                    }
+                };
+                return __conditionalContinue(_pending_8, _resume_1);
             }
-        };
-        return _resume_3();
+            i++;
+        }
     }
 }
 ```
 
 The empty final callback discards the last thenable's fulfillment value, while
 retaining rejection. Each continuation runs only after the preceding write
-completes. A loop increments after fulfillment, and synchronous iterations use
-`while` rather than recursive calls. Arrow callbacks retain lexical `this`;
+completes. The short sequence creates no continuation closures when all writes
+are plain; each duplicated suffix executes in only one selected branch. The
+loop likewise creates no resume callback until it suspends, then reuses that
+callback for later flushes. It increments after fulfillment, and synchronous
+iterations use `while` rather than recursive calls. Arrow callbacks retain lexical `this`;
 loop bindings keep an enclosing block scope. Throws before suspension escape
 synchronously; throws in a resumed callback reject its Promise.
 

@@ -54,6 +54,12 @@ for (const target of ["es2015", "es2016", "es2017", "es2022", "esnext"]) {
                 assert.equal(reads, expected.length);
                 assert.equal(calls, expected.length);
             }
+            const fiveWrites = [];
+            assert.equal(await m.directFive({ write(i) { fiveWrites.push(i); return Promise.resolve(i); } }), undefined);
+            assert.deepEqual(fiveWrites, [0, 1, 2, 3, 4]);
+            fiveWrites.length = 0;
+            assert.equal(m.directFive({ write(i) { fiveWrites.push(i); } }), undefined);
+            assert.deepEqual(fiveWrites, [0, 1, 2, 3, 4]);
             const collisionValues = [];
             assert.equal(m.directNameCollision(7, 8, { write(i) { collisionValues.push(i); } }), undefined);
             assert.deepEqual(collisionValues, [7, 8]);
