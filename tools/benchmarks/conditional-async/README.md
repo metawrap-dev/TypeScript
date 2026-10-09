@@ -78,3 +78,17 @@ The data does not establish browser behavior, production storage throughput,
 or a universal speedup. In particular, the current `async?` generator lowering
 is substantially slower for many tiny record functions. No emitter optimization
 was made or hidden to obtain these results.
+
+## Optimized lowering follow-up
+
+`optimized-run-1.json`, `optimized-run-2.json`, and `optimized-run-3.json` use the
+same workload and settings after moving conditional probes before generator
+yields, eliminating plain-value probe arrays, discarding unused await values,
+and skipping return probing for actual `undefined`. `optimized-summary.json`
+pools their 27 samples per case. The original results remain unchanged.
+
+Run the commands above with `optimized-run-N.json` output paths, then pass those
+three paths to `summarize.mjs` to reproduce the follow-up summary. Read the RFC's
+follow-up section for all-strategy tables and shared-environment limitations.
+Tests separately check that these changes preserve void and value completion,
+thenable/rejection behavior, and output ordering.

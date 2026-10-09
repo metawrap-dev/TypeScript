@@ -28,44 +28,41 @@ const nestedGeneric: number | Promise<number> = read<Promise<number>>(Promise.re
 //// [conditionalAsyncAwait.js]
 var __conditionalAwait = (this && this.__conditionalAwait) || function (value) {
     var then = value !== null && (typeof value === "object" || typeof value === "function") ? value.then : void 0;
-    return [value, typeof then === "function" ? { then: function (resolve, reject) { Reflect.apply(then, value, [resolve, reject]); } } : null];
+    return typeof then === "function" ? { then: function (resolve, reject) { Reflect.apply(then, value, [resolve, reject]); } } : null;
 };
 var __conditionalAwaiter = (this && this.__conditionalAwaiter) || function (thisArg, _arguments, P, generator) {
     function step(result) {
-        while (!result.done) {
-            var packet = result.value;
-            if (packet[0] && !packet[1][1]) {
-                result = generator.next(packet[1][0]);
-                continue;
-            }
-            return Promise.resolve(packet[0] ? packet[1][1] : packet[1]).then(
+        if (!result.done) {
+            return Promise.resolve(result.value).then(
                 function (value) { return step(generator.next(value)); },
                 function (error) { return step(generator["throw"](error)); }
             );
         }
+        // A bare return/fallthrough needs neither probing nor allocation.
+        if (result.value === void 0) return;
         var completion = __conditionalAwait(result.value);
-        return completion[1] ? Promise.resolve(completion[1]) : completion[0];
+        return completion ? Promise.resolve(completion) : result.value;
     }
     return step((generator = generator.apply(thisArg, _arguments || [])).next());
 };
 export function read(value) {
-    return __conditionalAwaiter(this, void 0, void 0, function* () { return yield [true, __conditionalAwait(value)]; });
+    return __conditionalAwaiter(this, void 0, void 0, function* () { var _a, _b; return ((_b = __conditionalAwait(_a = value)) ? yield _b : _a); });
 }
 export function flush(value) {
-    return __conditionalAwaiter(this, void 0, void 0, function* () { yield [true, __conditionalAwait(value)]; });
+    return __conditionalAwaiter(this, void 0, void 0, function* () { var _a; ((_a = __conditionalAwait(value)) ? yield _a : void 0); });
 }
-export const arrow = (value) => __conditionalAwaiter(void 0, void 0, void 0, function* () { return (yield [true, __conditionalAwait(value)]) + 1; });
+export const arrow = (value) => __conditionalAwaiter(void 0, void 0, void 0, function* () { var _a, _b; return (((_b = __conditionalAwait(_a = value)) ? yield _b : _a)) + 1; });
 export const expression = function (value) {
-    return __conditionalAwaiter(this, void 0, void 0, function* () { return yield [true, __conditionalAwait(value)]; });
+    return __conditionalAwaiter(this, void 0, void 0, function* () { var _a, _b; return ((_b = __conditionalAwait(_a = value)) ? yield _b : _a); });
 };
 export class Worker {
     read(value) {
-        return __conditionalAwaiter(this, void 0, void 0, function* () { return yield [true, __conditionalAwait(value)]; });
+        return __conditionalAwaiter(this, void 0, void 0, function* () { var _a, _b; return ((_b = __conditionalAwait(_a = value)) ? yield _b : _a); });
     }
 }
-export async function normal(value) { var _a; return (_a = __conditionalAwait(value), _a[1] ? await _a[1] : _a[0]); }
+export async function normal(value) { var _a, _b; return ((_b = __conditionalAwait(_a = value)) ? await _b : _a); }
 export function forced() {
-    return __conditionalAwaiter(this, void 0, void 0, function* () { yield [false, 1]; return 2; });
+    return __conditionalAwaiter(this, void 0, void 0, function* () { yield 1; return 2; });
 }
 export function noAwait() {
     return __conditionalAwaiter(this, void 0, void 0, function* () { return 3; });
@@ -75,11 +72,12 @@ export function empty() {
 }
 export function guarded(value) {
     return __conditionalAwaiter(this, void 0, void 0, function* () {
+        var _a, _b, _c;
         try {
-            return yield [true, __conditionalAwait(value)];
+            return ((_b = __conditionalAwait(_a = value)) ? yield _b : _a);
         }
         finally {
-            yield [true, __conditionalAwait(undefined)];
+            ((_c = __conditionalAwait(undefined)) ? yield _c : void 0);
         }
     });
 }

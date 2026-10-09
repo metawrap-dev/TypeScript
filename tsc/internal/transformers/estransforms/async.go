@@ -5,7 +5,6 @@ import (
 
 	"github.com/microsoft/TypeScript/tsc/internal/ast"
 	"github.com/microsoft/TypeScript/tsc/internal/collections"
-	"github.com/microsoft/TypeScript/tsc/internal/core"
 	"github.com/microsoft/TypeScript/tsc/internal/printer"
 	"github.com/microsoft/TypeScript/tsc/internal/transformers"
 )
@@ -312,36 +311,42 @@ func (tx *asyncTransformer) visitForStatementInAsyncBody(node *ast.ForStatement)
 //
 // This function will be called any time a ES2017 await expression is encountered.
 func (tx *asyncTransformer) visitAwaitExpression(node *ast.AwaitExpression) *ast.Node {
-	if tx.conditionalOnly && !tx.conditionalBody {
-		if node.Flags&ast.NodeFlagsConditional == 0 {
-			return tx.Visitor().VisitEachChild(node.AsNode())
-		}
-		// Probe once and evaluate the operand once. The native await exists only on
-		// the thenable branch; plain values do not cross a microtask boundary.
-		temp := tx.Factory().NewTempVariable()
-		tx.EmitContext().AddVariableDeclaration(temp)
-		probe := tx.Factory().NewConditionalAwaitHelper(tx.Visitor().VisitNode(node.Expression))
-		value := tx.Factory().NewElementAccessExpression(temp, nil, tx.Factory().NewNumericLiteral("0", 0), 0)
-		promise := tx.Factory().NewElementAccessExpression(temp, nil, tx.Factory().NewNumericLiteral("1", 0), 0)
-		return tx.Factory().NewParenthesizedExpression(tx.Factory().NewCommaExpression(
-			tx.Factory().NewAssignmentExpression(temp, probe),
-			tx.Factory().NewConditionalExpression(promise, tx.Factory().NewToken(ast.KindQuestionToken), tx.Factory().NewAwaitExpression(promise), tx.Factory().NewToken(ast.KindColonToken), value),
-		))
+	conditional := node.Flags&ast.NodeFlagsConditional != 0
+	if tx.conditionalOnly && !tx.conditionalBody && !conditional {
+		return tx.Visitor().VisitEachChild(node.AsNode())
 	}
-	// do not downlevel a top-level await as it is module syntax...
-	if tx.inTopLevelContext() {
+	// Top-level ordinary awaits remain module syntax.
+	if tx.inTopLevelContext() && !conditional {
 		return tx.Visitor().VisitEachChild(node.AsNode())
 	}
 	expression := tx.Visitor().VisitNode(node.Expression)
-	if tx.conditionalOnly {
-		conditional := node.Flags&ast.NodeFlagsConditional != 0
-		if conditional {
-			expression = tx.Factory().NewConditionalAwaitHelper(expression)
+	if tx.conditionalOnly && conditional {
+		// Evaluate and probe once, but enter the suspension machinery only for
+		// thenables. Plain values allocate no probe packet and never yield.
+		// A standalone await discards its fulfilled value. No value temporary
+		// is needed, regardless of its static type; sequencing still applies.
+		value := tx.Factory().NewVoidZeroExpression()
+		if node.Parent == nil || node.Parent.Kind != ast.KindExpressionStatement {
+			value = tx.Factory().NewTempVariable()
+			tx.EmitContext().AddVariableDeclaration(value)
+			expression = tx.Factory().NewAssignmentExpression(value, expression)
 		}
-		expression = tx.Factory().NewArrayLiteralExpression(tx.Factory().NewNodeList([]*ast.Node{
-			tx.Factory().NewKeywordExpression(core.IfElse(conditional, ast.KindTrueKeyword, ast.KindFalseKeyword)), expression,
-		}), false)
+		promise := tx.Factory().NewTempVariable()
+		tx.EmitContext().AddVariableDeclaration(promise)
+		probe := tx.Factory().NewConditionalAwaitHelper(expression)
+		var suspended *ast.Node
+		if tx.conditionalBody {
+			suspended = tx.Factory().NewYieldExpression(nil, promise)
+		} else {
+			suspended = tx.Factory().NewAwaitExpression(promise)
+		}
+		return tx.Factory().NewParenthesizedExpression(tx.Factory().NewConditionalExpression(
+			tx.Factory().NewAssignmentExpression(promise, probe),
+			tx.Factory().NewToken(ast.KindQuestionToken), suspended,
+			tx.Factory().NewToken(ast.KindColonToken), value,
+		))
 	}
+
 	yieldExpr := tx.Factory().NewYieldExpression(nil, expression)
 	yieldExpr.Loc = node.Loc
 	tx.EmitContext().SetOriginal(yieldExpr, node.AsNode())

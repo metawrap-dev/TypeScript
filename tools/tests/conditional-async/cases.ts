@@ -54,3 +54,13 @@ export function checkGenericTypes() {
     const nested: number | Promise<number> = identity<Promise<number>>(Promise.resolve(1));
     return nested;
 }
+
+// Discarding a result may simplify emit, but must still consume a thenable.
+export async? function discard(value: unknown): void | Promise<void> {
+    await? value;
+    events.push("discarded");
+}
+// A contextual void contract can conceal a runtime value, including a thenable.
+export async? function contextualVoid(callback: () => void): void | Promise<void> {
+    return callback();
+}

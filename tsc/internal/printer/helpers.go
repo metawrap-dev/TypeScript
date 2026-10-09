@@ -567,7 +567,7 @@ var conditionalAwaitHelper = &EmitHelper{
 	Name:   "typescript:conditional-await", ImportName: "__conditionalAwait", Priority: &Priority{4},
 	TextCallback: inlineConditionalHelper(`var __conditionalAwait = (this && this.__conditionalAwait) || function (value) {
     var then = value !== null && (typeof value === "object" || typeof value === "function") ? value.then : void 0;
-    return [value, typeof then === "function" ? { then: function (resolve, reject) { Reflect.apply(then, value, [resolve, reject]); } } : null];
+    return typeof then === "function" ? { then: function (resolve, reject) { Reflect.apply(then, value, [resolve, reject]); } } : null;
 };`),
 }
 
@@ -576,19 +576,16 @@ var conditionalAwaiterHelper = &EmitHelper{
 	Name:   "typescript:conditional-awaiter", ImportName: "__conditionalAwaiter", Priority: &Priority{5}, Dependencies: []*EmitHelper{conditionalAwaitHelper},
 	TextCallback: inlineConditionalHelper(`var __conditionalAwaiter = (this && this.__conditionalAwaiter) || function (thisArg, _arguments, P, generator) {
     function step(result) {
-        while (!result.done) {
-            var packet = result.value;
-            if (packet[0] && !packet[1][1]) {
-                result = generator.next(packet[1][0]);
-                continue;
-            }
-            return Promise.resolve(packet[0] ? packet[1][1] : packet[1]).then(
+        if (!result.done) {
+            return Promise.resolve(result.value).then(
                 function (value) { return step(generator.next(value)); },
                 function (error) { return step(generator["throw"](error)); }
             );
         }
+        // A bare return/fallthrough needs neither probing nor allocation.
+        if (result.value === void 0) return;
         var completion = __conditionalAwait(result.value);
-        return completion[1] ? Promise.resolve(completion[1]) : completion[0];
+        return completion ? Promise.resolve(completion) : result.value;
     }
     return step((generator = generator.apply(thisArg, _arguments || [])).next());
 };`),
