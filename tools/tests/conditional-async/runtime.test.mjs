@@ -58,6 +58,9 @@ for (const target of ["es2015", "es2016", "es2017", "es2022", "esnext"]) {
             assert.equal(await pending, 8);
             assert.equal(reads, 1);
             assert.equal(calls, 1);
+            await assert.rejects(m.identity({ then() { throw new Error("then method"); } }), /then method/);
+            await assert.rejects(m.identity({ then(_resolve, reject) { reject(new Error("then rejection")); } }), /then rejection/);
+            assert.equal(await m.identity({ then(resolve, reject) { resolve(16); reject(new Error("late rejection")); throw new Error("late throw"); } }), 16);
             const plain = { get then() { reads++; return null; } };
             reads = 0;
             assert.equal(m.identity(plain), plain);
@@ -69,6 +72,18 @@ for (const target of ["es2015", "es2016", "es2017", "es2022", "esnext"]) {
             assert.equal(await m.guarded(Promise.reject(new Error("reject"))), "caught");
             assert.throws(() => m.failure(1), /failure/);
             await assert.rejects(m.failure(Promise.resolve(1)), /failure/);
+            await assert.rejects(m.sequence([Promise.resolve(1), throwing]), /getter/);
+            m.events.length = 0;
+            assert.equal(m.guarded(throwing), "caught");
+            assert.deepEqual(m.events, ["finally"]);
+            m.events.length = 0;
+            assert.equal(await m.guarded(Promise.reject(new Error("cleanup rejection"))), "caught");
+            assert.deepEqual(m.events, ["finally"]);
+            let entered = false;
+            const deferredFailure = Promise.resolve().then(() => { entered = true; return m.failure(1); });
+            assert.equal(entered, false);
+            await assert.rejects(deferredFailure, /failure/);
+            assert.equal(entered, true);
             m.events.length = 0;
             assert.equal(m.sequence([1, 2, 3]), 6);
             assert.deepEqual(m.events, ["1", "3", "6"]);
