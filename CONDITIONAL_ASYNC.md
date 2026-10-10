@@ -951,6 +951,12 @@ changing every ordinary `await` to `await?` is behavior-preserving.
 
 ## Build and test
 
+VS Code users: the [highlighting extension](tools/vscode-conditional-async/README.md)
+adds keyword colors for `async?` and `await?` in TypeScript and TSX. Its installation
+instructions also explain selecting this fork's language server; highlighting
+alone does not enable type checking of the experimental syntax. The extension's
+24 TextMate tokenizer checks pass; an editor screenshot has not been captured.
+
 Prerequisites: Go 1.27 and Node.js 24.
 
 ```sh

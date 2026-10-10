@@ -1,0 +1,14 @@
+{
+  "scopeName": "conditional.async-await.ts",
+  "injectionSelector": "L:source.ts -comment -string, L:source.ts meta.template.expression -comment, L:source.tsx -comment -string -meta.jsx.children -meta.tag, L:source.tsx meta.template.expression -comment -meta.jsx.children, L:source.tsx meta.embedded.expression -comment -string",
+  "patterns": [
+    {
+      "name": "storage.modifier.async.ts",
+      "match": "(?<![.$\\w])\\basync\\?(?=\\s*(?:function\\b|[$\\w]+\\s*(?:=>|\\()|[(<](?:[^;\\n]*=>|[^);\\n]*$)))"
+    },
+    {
+      "name": "keyword.control.flow.ts",
+      "match": "(?<![.$\\w])\\bawait\\?(?!\\s*[.:])(?!\\s*\\([^;\\n]*\\)\\s*:)"
+    }
+  ]
+}

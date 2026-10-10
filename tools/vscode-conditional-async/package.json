@@ -1,0 +1,23 @@
+{
+  "name": "conditional-async-highlight",
+  "displayName": "Conditional async / await Highlighting",
+  "description": "Highlight the experimental async? and await? syntax in TypeScript and TSX.",
+  "version": "0.1.0",
+  "publisher": "metawrap-dev",
+  "license": "Apache-2.0",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Programming Languages"],
+  "repository": { "type": "git", "url": "https://github.com/metawrap-dev/TypeScript.git" },
+  "contributes": {
+    "grammars": [{
+      "scopeName": "conditional.async-await.ts",
+      "path": "./syntaxes/conditional-async.tmLanguage.json",
+      "injectTo": ["source.ts", "source.tsx"]
+    }]
+  },
+  "scripts": { "test": "node --test test/highlighting.test.cjs" },
+  "devDependencies": {
+    "vscode-oniguruma": "2.0.1",
+    "vscode-textmate": "9.3.2"
+  }
+}
