@@ -14,29 +14,106 @@ The same latest batch is used for every entry. Lower times are better.
 
 | Implementation | Memory, no flush | Microtask flushes | File writes |
 | --- | ---: | ---: | ---: |
-| ordinary `async` + `await` | 27.52 ms | 26.19 ms | 33.60 ms |
-| ordinary `async` + manual checks | 9.54 ms | 9.33 ms | 15.23 ms |
-| ordinary `async` + `await?` | 23.48 ms | 21.38 ms | 29.62 ms |
-| **`async?` + `await?`** | 6.04 ms | 5.39 ms | 11.25 ms |
-| manual synchronous continuations | 5.94 ms | 4.01 ms | 10.38 ms |
+| ordinary `async` + `await` | 31.53 ms | 34.92 ms | 39.24 ms |
+| ordinary `async` + manual checks | 9.09 ms | 9.65 ms | 15.45 ms |
+| ordinary `async` + `await?` | 22.99 ms | 24.21 ms | 32.50 ms |
+| **`async?` + `await?`** | 6.22 ms | 5.69 ms | 12.13 ms |
+| manual synchronous continuations | 4.53 ms | 4.36 ms | 10.01 ms |
+| LazyPromise generator | 163.39 ms | 175.93 ms | 179.56 ms |
+| LazyPromise generator + pending checks | 114.17 ms | 109.44 ms | 124.70 ms |
+| LazyPromise manual continuation adapter | 5.73 ms | 5.61 ms | 12.13 ms |
 
-In this batch, conditional functions take about **4.6× less elapsed time** than
-ordinary async/await in memory, and are within about **2% of the manual
-continuation median**. Manual continuations explicitly resume through
-`pending.then(resume)` after a flush; they assume `void | Promise<void>`, while
-the compiler supports arbitrary thenables. For the flat in-memory writer,
-`async?` + `await?` takes **2.74 ms**, versus **20.16 ms** for ordinary async/await.
+This batch includes the library linked by [lazypromise.com](https://lazypromise.com/),
+**`@lazy-promise/core` 0.0.46**. Conditional functions are faster than its
+straight generator flow in this workload; the manual continuation adapter is
+competitive and faster in memory, but retains the manual sequencing code.
+The flat writer also favors LazyPromise with explicit pending checks in memory
+(3.05 ms versus 3.33 ms for conditional functions). This does not establish a
+universal winner or require new syntax to achieve synchronous completion.
 
 Supported short sequences and `for` loops create continuation callbacks only
 when they suspend; larger sequences use shared callbacks, and complex bodies
 retain a generator fallback. This is a working prototype, **not an ECMAScript
 standard or an upstream TypeScript feature**.
 
-Measured on Node v24.19.0, targeting ES2022, on 2026-10-09. These synthetic
+Measured on Node v24.19.0, targeting ES2022, on 2026-10-10. These synthetic
 results vary in a shared environment; file writes omit `fsync`. They do not
 predict native-engine performance or establish statistical equivalence. See
-[the full latest results and tradeoffs](#delayed-callback-creation-latest-measurements)
+[the full latest results and tradeoffs](#lazypromise-comparison)
 for both layouts, earlier comparisons, raw samples, and limitations.
+
+## LazyPromise comparison
+
+The comparison uses the same 100,000 records / 300,000 writes / 4.8 MB workload,
+with all eight strategies measured together: three fresh processes, nine samples
+per case per process, three warmups, and rotated order. No compiler changes were
+made for this batch. Earlier result batches are retained below; compare strategies
+within a batch rather than attributing cross-batch differences to implementation.
+
+**Flat writer — pooled medians:**
+
+| Implementation | Memory, no flush | Microtask flushes | File writes |
+| --- | ---: | ---: | ---: |
+| ordinary `async` + `await` | 16.96 ms | 17.27 ms | 22.50 ms |
+| ordinary `async` + manual checks | 2.39 ms | 3.31 ms | 8.35 ms |
+| ordinary `async` + `await?` | 3.46 ms | 3.66 ms | 9.43 ms |
+| **`async?` + `await?`** | 3.33 ms | 3.68 ms | 9.88 ms |
+| manual synchronous continuations | 2.47 ms | 2.34 ms | 7.44 ms |
+| LazyPromise generator | 37.10 ms | 39.11 ms | 45.92 ms |
+| LazyPromise generator + pending checks | 3.05 ms | 4.09 ms | 9.37 ms |
+| LazyPromise manual continuation adapter | 2.15 ms | 2.30 ms | 7.46 ms |
+
+The layered table is in the summary above. Each trial checks byte counts, flush
+counts, buffer reuse, and stored output. Tests also compare synchronous completion,
+ordering through repeated asynchronous flushes, and failures before/after suspension.
+
+The library comparison implements three useful alternatives:
+
+- **Generator:** `fromGen(function* () { yield* fromEager(() => write(...)); })`,
+  including a nested three-write record generator in the layered layout.
+- **Checked generator:** only yields when `const pending = write(...)` returns a
+  Promise. This avoids wrapping and yielding synchronous writes but requires
+  explicit checks. Layered records still use nested generator subscriptions.
+- **Manual adapter:** `fromEager(() => manualContinuation(...))`, preserving the
+  hand-written continuation algorithm. This provides an efficient library baseline
+  while retaining the bookkeeping that conditional syntax aims to remove.
+
+All LazyPromise workloads are constructed and subscribed once inside the timer;
+subscription starts immediately. The harness returns inline on synchronous
+settlement and allocates a native waiting Promise only for pending completion.
+It does not normalize every LazyPromise through `toEager()` or ordinary `await`,
+which would hide the library's synchronous completion. Native flush promises and
+byte-writing logic are identical across strategies.
+
+LazyPromise is a viable library alternative for synchronous notification, with
+additional cancellation and typed-error capabilities. Its generator flow also
+creates wrappers, generators, and subscriptions while sequencing operations; our
+supported short functions/loops instead emit direct continuations. These are
+structural differences, not a CPU-profile attribution. The optimized library
+variants show why timing the straight generator spelling alone would be incomplete.
+
+The APIs have different contracts: `async?` starts when called and returns a plain
+value or Promise; LazyPromise returns an object, starts on subscription, and can
+execute again on another subscription. Errors are delivered to its rejection sink.
+Our test adapter rethrows inline rejection to consume both implementations uniformly;
+that adapter is not a claim that LazyPromise itself throws like `async?`. Cancellation,
+tracing, dependency injection, resubscription, and generic thenable behavior are
+outside this native-flush comparison. File writes omit `fsync`; shared-environment
+variation and OS caching apply to all rows. These numbers do not predict production
+or browser performance, or a hypothetical native conditional-await implementation.
+
+Sources and reproducibility:
+
+- [Library source](https://github.com/lazy-promise/lazy-promise),
+  [generator syntax](https://lazypromise.com/generator-syntax/), and
+  [native Promise interop](https://lazypromise.com/interop-with-native-promises/).
+- [Comparison implementations](tools/benchmarks/conditional-async/lazy-writers.mjs),
+  [25 behavioral tests](tools/benchmarks/conditional-async/comparison.test.mjs), and
+  [installation and reproduction commands](tools/benchmarks/conditional-async/README.md#lazypromise-comparison).
+- [Run 1](tools/benchmarks/conditional-async/lazypromise-run-1.json),
+  [run 2](tools/benchmarks/conditional-async/lazypromise-run-2.json),
+  [run 3](tools/benchmarks/conditional-async/lazypromise-run-3.json), and
+  [pooled medians, full ranges, and sample counts](tools/benchmarks/conditional-async/lazypromise-summary.json).
 
 ## The problem
 

@@ -1,0 +1,8 @@
+{
+  "name": "conditional-async-benchmarks",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@lazy-promise/core": "0.0.46"
+  }
+}

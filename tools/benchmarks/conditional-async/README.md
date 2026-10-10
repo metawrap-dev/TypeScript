@@ -1,6 +1,6 @@
 # Buffered-write benchmark
 
-This benchmark compares five spellings/implementations of the same ordered
+This benchmark compares eight spellings/implementations of the same ordered
 buffer writes, compiled by the fork to ES2022 CommonJS and run on Node:
 
 1. Ordinary `async` with an unconditional `await` at every write.
@@ -8,6 +8,9 @@ buffer writes, compiled by the fork to ES2022 CommonJS and run on Node:
 3. Ordinary `async` with `await?` at every write.
 4. `async?` with `await?` at every write.
 5. A hand-written synchronous loop with `.then(resume)` continuations on flushes.
+6. LazyPromise `fromGen` / `yield* fromEager` at every write.
+7. LazyPromise generators with explicit pending checks before yielding.
+8. LazyPromise `fromEager` around the hand-written continuation strategy.
 
 The manual checks rely on this benchmark's precise `void | Promise<void>`
 contract. They do not implement the generic thenable probing of `await?`.
@@ -43,6 +46,7 @@ inside timing. All returned completions are consumed.
 From the repository root:
 
 ```sh
+npm ci --ignore-scripts --prefix tools/benchmarks/conditional-async
 go build -o ./tsgo ./tsc/cmd/tsc
 TSGO_BINARY="$PWD/tsgo" node tools/benchmarks/conditional-async/run.mjs results-run-1.json
 TSGO_BINARY="$PWD/tsgo" node tools/benchmarks/conditional-async/run.mjs results-run-2.json
@@ -117,3 +121,48 @@ sequences retain shared continuations to bound output size. Use these paths with
 the same reproduction commands. The RFC retains all prior measurement batches
 and reports the latest all-strategy tables, raw ranges, and code-size tradeoff.
 Compilation and runtime correctness checks completed before these measurement runs.
+
+## LazyPromise comparison
+
+The library linked by [lazypromise.com](https://lazypromise.com/) is
+`@lazy-promise/core`, not the unrelated `lazypromise` npm package. The isolated
+benchmark package pins version **0.0.46**, including a lockfile. Run:
+
+```sh
+npm ci --ignore-scripts --prefix tools/benchmarks/conditional-async
+TSGO_BINARY="$PWD/tsgo" node --test tools/benchmarks/conditional-async/comparison.test.mjs
+TSGO_BINARY="$PWD/tsgo" node tools/benchmarks/conditional-async/run.mjs tools/benchmarks/conditional-async/lazypromise-run-1.json
+TSGO_BINARY="$PWD/tsgo" node tools/benchmarks/conditional-async/run.mjs tools/benchmarks/conditional-async/lazypromise-run-2.json
+TSGO_BINARY="$PWD/tsgo" node tools/benchmarks/conditional-async/run.mjs tools/benchmarks/conditional-async/lazypromise-run-3.json
+node tools/benchmarks/conditional-async/summarize.mjs tools/benchmarks/conditional-async/lazypromise-run-{1,2,3}.json > tools/benchmarks/conditional-async/lazypromise-summary.json
+```
+
+[lazy-writers.mjs](lazy-writers.mjs) uses the published library's documented
+[generator syntax](https://lazypromise.com/generator-syntax/) and
+[native-Promise interop](https://lazypromise.com/interop-with-native-promises/).
+Its three variants distinguish expressive generator sequencing, generator
+sequencing with explicit sync checks, and a thin adapter around fully manual
+continuations. The adapter retains all the hand-written sequencing boilerplate;
+it is an efficient library baseline, not a generator-syntax result.
+
+Each operation is constructed and subscribed once **inside the timer**. Native
+flush promises are unchanged. `consumeLazy` starts the subscription immediately,
+returns undefined if it settles inline, and only allocates a waiting native
+Promise when necessary. Calling `toEager()` or using ordinary await for every
+LazyPromise would conceal its synchronous completion capability. Reported
+`synchronousCompletion` means that the entire subscribed workload finished
+before that boundary returned; the LazyPromise object itself is always returned
+by the library strategy, unlike the conditional function's void/Promise result.
+
+The comparison tests verify immediate completion, ordered writes, backpressure,
+repeated flushes, failures before and after suspension, and lazy versus eager
+entry. Cancellation, typed errors, dependency injection, tracing, resubscription,
+and arbitrary thenables are outside this native-flush workload. LazyPromise
+supports features beyond this proposal: these are not interchangeable API
+contracts. Conditional functions execute when called; LazyPromise executes when
+subscribed and exposes errors through its rejection sink. The test adapter
+rethrows a synchronous sink error solely to consume both strategies uniformly.
+No general Promise/A+ or library conformance claim is made.
+
+`lazypromise-run-{1,2,3}.json` and `lazypromise-summary.json` contain the new
+same-batch measurements (27 samples per case); previous batches remain intact.

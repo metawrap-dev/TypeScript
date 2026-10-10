@@ -14,6 +14,7 @@ for (let scenario = 0; scenario < runs[0].results.length; scenario++) {
         const samples = runs.flatMap(run => {
             const entry = run.results[scenario];
             if (entry.layout !== first.layout || entry.mode !== first.mode || run.writes !== runs[0].writes) throw new Error('Incompatible reports');
+            if (entry.rows.length !== first.rows.length || entry.rows[strategy].strategy !== first.rows[strategy].strategy || run.lazyPromiseVersion !== runs[0].lazyPromiseVersion) throw new Error('Incompatible strategies or dependency versions');
             return entry.rows[strategy].rawMs;
         });
         rows.push({ layout: first.layout, mode: first.mode, strategy: first.rows[strategy].strategy,
