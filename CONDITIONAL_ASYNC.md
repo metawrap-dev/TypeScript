@@ -26,12 +26,23 @@ The same latest batch is used for every entry. Lower times are better.
 | RxJS sequencing + pending checks | 877.57 ms | 874.03 ms | 901.72 ms |
 | RxJS manual continuation adapter | 4.58 ms | 4.35 ms | 12.06 ms |
 
+**Adapter baseline only:** The RxJS and LazyPromise manual continuation adapters
+just measure the baseline overhead of wrapping an already optimized manual
+continuation strategy in the library. The manual writer sequences every write;
+the library wraps the whole workload once at the invocation/completion boundary.
+These rows do **not** measure sequencing the writes with RxJS operators or
+LazyPromise generators, and do not remove the manual continuation boilerplate.
+The reported times include the underlying writer, not just library overhead;
+comparison with the bare manual baseline gives only a noisy estimate of that
+added overhead. "Optimized" refers to our hand-optimized benchmark baseline,
+not a proof that no faster implementation is possible.
+
 This batch includes **RxJS 7.8.2** and **`@lazy-promise/core` 0.0.46**.
 Their operator/generator flows are slower than the supported direct-continuation
 compiler output for these tiny writes. Both libraries can preserve synchronous
-completion; RxJS's manual continuation adapter is competitive and faster in
-memory, while retaining the manual sequencing code. This does not establish a
-universal winner or require new syntax to achieve synchronous completion.
+completion; RxJS's manual continuation adapter has a similar in-memory median
+to the bare manual baseline, while retaining the manual sequencing code. This
+does not establish a universal winner or require new syntax to achieve synchronous completion.
 
 Supported short sequences and `for` loops create continuation callbacks only
 when they suspend; larger sequences use shared callbacks, and complex bodies
@@ -66,6 +77,11 @@ compiler changes were made for this batch. Earlier batches remain below.
 | RxJS Observable sequencing (`expand`) | 484.66 ms | 513.44 ms | 713.75 ms |
 | RxJS sequencing + pending checks | 429.40 ms | 477.79 ms | 673.87 ms |
 | RxJS manual continuation adapter | 2.44 ms | 2.54 ms | 9.50 ms |
+
+**Adapter baseline only:** Both manual-adapter rows wrap the same already
+optimized manual continuation strategy once. They measure baseline library
+wrapping overhead, not per-write library sequencing; total elapsed time still
+includes the manual writer. See the summary note above.
 
 The RxJS comparison uses the published library and implements three alternatives:
 
@@ -163,7 +179,9 @@ The library comparison implements three useful alternatives:
   explicit checks. Layered records still use nested generator subscriptions.
 - **Manual adapter:** `fromEager(() => manualContinuation(...))`, preserving the
   hand-written continuation algorithm. This provides an efficient library baseline
-  while retaining the bookkeeping that conditional syntax aims to remove.
+  while retaining the bookkeeping that conditional syntax aims to remove. This
+  row measures baseline library overhead on an already optimized manual
+  continuation strategy, not LazyPromise generator sequencing.
 
 All LazyPromise workloads are constructed and subscribed once inside the timer;
 subscription starts immediately. The harness returns inline on synchronous

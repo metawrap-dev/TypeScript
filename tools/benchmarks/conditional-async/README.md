@@ -146,7 +146,12 @@ node tools/benchmarks/conditional-async/summarize.mjs tools/benchmarks/condition
 Its three variants distinguish expressive generator sequencing, generator
 sequencing with explicit sync checks, and a thin adapter around fully manual
 continuations. The adapter retains all the hand-written sequencing boilerplate;
-it is an efficient library baseline, not a generator-syntax result.
+it just measures baseline library overhead on an already optimized manual
+continuation strategy, not a generator-syntax result. The library wraps the
+whole workload once; the manual writer still sequences every write. Total
+elapsed time includes that writer, so subtracting the bare manual baseline
+only gives a noisy estimate of wrapping overhead. This is our hand-optimized
+baseline, not a claim of universal optimality.
 
 Each operation is constructed and subscribed once **inside the timer**. Native
 flush promises are unchanged. `consumeLazy` starts the subscription immediately,
@@ -186,7 +191,12 @@ remaining workload during the first asynchronous flush. Layered records use
 nested three-step Observable flows. A second variant directly checks for a
 pending return before choosing `from(pending)` or `EMPTY`, avoiding the per-write
 `defer` wrapper. Both still use RxJS sequencing. A third variant wraps the same
-manual continuation algorithm as the LazyPromise manual adapter.
+manual continuation algorithm as the LazyPromise manual adapter. These two
+adapters just measure baseline library overhead on an already optimized manual
+continuation strategy. They wrap the whole workload once at the invocation and
+completion boundary; they do not measure RxJS or LazyPromise sequencing inside
+the writer or remove the manual boilerplate. Reported elapsed time includes the
+manual writer, and comparison with its bare baseline is noisy.
 
 `defaultIfEmpty` advances steps that complete without a value; `ignoreElements`
 makes the result a completion-only Observable. `observeOn(queueScheduler)`
