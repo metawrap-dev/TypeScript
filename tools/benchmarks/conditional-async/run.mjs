@@ -9,6 +9,8 @@ import { createRequire } from 'node:module';
 import { performance } from 'node:perf_hooks';
 import { lazyGenerator, layeredLazyGenerator, lazyCheckedGenerator, layeredLazyCheckedGenerator, lazyManualAdapter, consumeLazy } from './lazy-writers.mjs';
 
+import { rxExpand, layeredRxExpand, rxCheckedExpand, layeredRxCheckedExpand, rxManualAdapter, consumeObservable } from './rx-writers.mjs';
+
 const compiler = process.env.TSGO_BINARY;
 assert.ok(compiler, 'Set TSGO_BINARY to the built fork compiler');
 const records = Number(process.env.BENCH_RECORDS ?? 100000);
@@ -17,8 +19,8 @@ const warmups = Number(process.env.BENCH_WARMUPS ?? 3);
 for (const n of [records, samples, warmups]) assert.ok(Number.isInteger(n) && n > 0);
 const dir = mkdtempSync(path.join(os.tmpdir(), 'conditional-write-bench-'));
 const source = fileURLToPath(new URL('writers.ts', import.meta.url));
-const names = ['ordinary', 'manualChecks', 'conditionalAwait', 'conditionalFunction', 'manualContinuation', 'lazyGenerator', 'lazyCheckedGenerator', 'lazyManualAdapter'];
-const labels = ['ordinary async + await', 'ordinary async + manual checks', 'ordinary async + await?', 'async? + await?', 'manual sync continuation', 'LazyPromise generator', 'LazyPromise checked generator', 'LazyPromise manual adapter'];
+const names = ['ordinary', 'manualChecks', 'conditionalAwait', 'conditionalFunction', 'manualContinuation', 'lazyGenerator', 'lazyCheckedGenerator', 'lazyManualAdapter', 'rxExpand', 'rxCheckedExpand', 'rxManualAdapter'];
+const labels = ['ordinary async + await', 'ordinary async + manual checks', 'ordinary async + await?', 'async? + await?', 'manual sync continuation', 'LazyPromise generator', 'LazyPromise checked generator', 'LazyPromise manual adapter', 'RxJS expand', 'RxJS checked expand', 'RxJS manual adapter'];
 const results = [];
 const totalWrites = records * 3;
 const totalBytes = totalWrites * 16;
@@ -71,14 +73,14 @@ class BufferedWriter {
     }
 }
 
-async function runOne(fn, mode, capacity, lazy) {
+async function runOne(fn, mode, capacity, consume) {
     const filePath = path.join(dir, 'output.bin');
     const file = mode === 'file' ? await open(filePath, 'w') : undefined;
     const buffer = new BufferedWriter(mode, capacity, file);
     try {
         const start = performance.now();
         const result = fn(buffer, records);
-        const completion = lazy ? consumeLazy(result) : result;
+        const completion = consume ? consume(result) : result;
         const synchronous = completion === undefined;
         if (completion) await completion;
         // Memory-only scenario deliberately retains all bytes without a flush.
@@ -119,6 +121,9 @@ try {
             ? (layout === 'flat' ? lazyGenerator : layeredLazyGenerator)
             : name === 'lazyCheckedGenerator' ? (layout === 'flat' ? lazyCheckedGenerator : layeredLazyCheckedGenerator)
             : name === 'lazyManualAdapter' ? lazyManualAdapter(manual)
+            : name === 'rxExpand' ? (layout === 'flat' ? rxExpand : layeredRxExpand)
+            : name === 'rxCheckedExpand' ? (layout === 'flat' ? rxCheckedExpand : layeredRxCheckedExpand)
+            : name === 'rxManualAdapter' ? rxManualAdapter(manual)
             : writers[layout === 'flat' ? name : `layered${name[0].toUpperCase()}${name.slice(1)}`]);
         for (const scenario of [{ mode: 'memory', capacity: totalBytes + 16 }, { mode: 'microtask', capacity: 65536 }, { mode: 'file', capacity: 65536 }]) {
             const timings = names.map(() => []);
@@ -128,7 +133,7 @@ try {
                 // Rotate order deterministically; don't always give one strategy first/last position.
                 for (let j = 0; j < names.length; j++) {
                     const index = (j + round) % names.length;
-                    const run = await runOne(functions[index], scenario.mode, scenario.capacity, index >= 5);
+                    const run = await runOne(functions[index], scenario.mode, scenario.capacity, index >= 8 ? consumeObservable : index >= 5 ? consumeLazy : undefined);
                     if (round >= warmups) timings[index].push(run.elapsed);
                     completions[index] = run.synchronous;
                     flushes = run.flushes;
@@ -142,7 +147,7 @@ try {
             console.log(`${layout}/${scenario.mode}: ${rows.map(r => `${r.strategy} ${r.medianMs.toFixed(2)}ms`).join('; ')}`);
         }
     }
-    const report = { date: new Date().toISOString(), node: process.version, v8: process.versions.v8, platform: process.platform, arch: process.arch, cpu: os.cpus()[0]?.model, logicalCpus: os.cpus().length, records, writes: totalWrites, bytes: totalBytes, warmups, samples, target: 'es2022', lazyPromiseVersion: '0.0.46', results };
+    const report = { date: new Date().toISOString(), node: process.version, v8: process.versions.v8, platform: process.platform, arch: process.arch, cpu: os.cpus()[0]?.model, logicalCpus: os.cpus().length, records, writes: totalWrites, bytes: totalBytes, warmups, samples, target: 'es2022', lazyPromiseVersion: '0.0.46', rxjsVersion: '7.8.2', results };
     const output = process.argv[2];
     if (output) writeFileSync(output, JSON.stringify(report, null, 2) + '\n');
     else console.log(JSON.stringify(report, null, 2));

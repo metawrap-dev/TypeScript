@@ -14,21 +14,23 @@ The same latest batch is used for every entry. Lower times are better.
 
 | Implementation | Memory, no flush | Microtask flushes | File writes |
 | --- | ---: | ---: | ---: |
-| ordinary `async` + `await` | 31.53 ms | 34.92 ms | 39.24 ms |
-| ordinary `async` + manual checks | 9.09 ms | 9.65 ms | 15.45 ms |
-| ordinary `async` + `await?` | 22.99 ms | 24.21 ms | 32.50 ms |
-| **`async?` + `await?`** | 6.22 ms | 5.69 ms | 12.13 ms |
-| manual synchronous continuations | 4.53 ms | 4.36 ms | 10.01 ms |
-| LazyPromise generator | 163.39 ms | 175.93 ms | 179.56 ms |
-| LazyPromise generator + pending checks | 114.17 ms | 109.44 ms | 124.70 ms |
-| LazyPromise manual continuation adapter | 5.73 ms | 5.61 ms | 12.13 ms |
+| ordinary `async` + `await` | 30.75 ms | 29.75 ms | 43.25 ms |
+| ordinary `async` + manual checks | 11.40 ms | 9.30 ms | 17.05 ms |
+| ordinary `async` + `await?` | 25.97 ms | 24.28 ms | 34.49 ms |
+| **`async?` + `await?`** | 6.56 ms | 6.07 ms | 12.94 ms |
+| manual synchronous continuations | 4.58 ms | 4.50 ms | 11.11 ms |
+| LazyPromise generator | 184.55 ms | 184.71 ms | 205.00 ms |
+| LazyPromise generator + pending checks | 125.57 ms | 122.32 ms | 139.12 ms |
+| LazyPromise manual continuation adapter | 7.14 ms | 8.16 ms | 14.64 ms |
+| RxJS Observable sequencing (`expand`) | 970.63 ms | 940.00 ms | 935.61 ms |
+| RxJS sequencing + pending checks | 877.57 ms | 874.03 ms | 901.72 ms |
+| RxJS manual continuation adapter | 4.58 ms | 4.35 ms | 12.06 ms |
 
-This batch includes the library linked by [lazypromise.com](https://lazypromise.com/),
-**`@lazy-promise/core` 0.0.46**. Conditional functions are faster than its
-straight generator flow in this workload; the manual continuation adapter is
-competitive and faster in memory, but retains the manual sequencing code.
-The flat writer also favors LazyPromise with explicit pending checks in memory
-(3.05 ms versus 3.33 ms for conditional functions). This does not establish a
+This batch includes **RxJS 7.8.2** and **`@lazy-promise/core` 0.0.46**.
+Their operator/generator flows are slower than the supported direct-continuation
+compiler output for these tiny writes. Both libraries can preserve synchronous
+completion; RxJS's manual continuation adapter is competitive and faster in
+memory, while retaining the manual sequencing code. This does not establish a
 universal winner or require new syntax to achieve synchronous completion.
 
 Supported short sequences and `for` loops create continuation callbacks only
@@ -39,10 +41,94 @@ standard or an upstream TypeScript feature**.
 Measured on Node v24.19.0, targeting ES2022, on 2026-10-10. These synthetic
 results vary in a shared environment; file writes omit `fsync`. They do not
 predict native-engine performance or establish statistical equivalence. See
-[the full latest results and tradeoffs](#lazypromise-comparison)
+[the full latest results and tradeoffs](#rxjs-and-lazypromise-comparison)
 for both layouts, earlier comparisons, raw samples, and limitations.
 
+## RxJS and LazyPromise comparison
+
+All **eleven strategies** above were measured together on the same workload:
+100,000 records, 300,000 small writes, 4.8 MB; three fresh Node processes, three
+warmups and nine samples per case in each, with rotated strategy order. No
+compiler changes were made for this batch. Earlier batches remain below.
+
+**Flat writer — pooled medians:**
+
+| Implementation | Memory, no flush | Microtask flushes | File writes |
+| --- | ---: | ---: | ---: |
+| ordinary `async` + `await` | 18.26 ms | 17.54 ms | 29.31 ms |
+| ordinary `async` + manual checks | 4.25 ms | 3.13 ms | 10.97 ms |
+| ordinary `async` + `await?` | 5.49 ms | 3.75 ms | 10.59 ms |
+| **`async?` + `await?`** | 4.81 ms | 3.92 ms | 18.20 ms |
+| manual synchronous continuations | 3.94 ms | 2.36 ms | 10.40 ms |
+| LazyPromise generator | 41.29 ms | 43.60 ms | 66.46 ms |
+| LazyPromise generator + pending checks | 5.60 ms | 4.88 ms | 17.74 ms |
+| LazyPromise manual continuation adapter | 2.93 ms | 2.78 ms | 14.50 ms |
+| RxJS Observable sequencing (`expand`) | 484.66 ms | 513.44 ms | 713.75 ms |
+| RxJS sequencing + pending checks | 429.40 ms | 477.79 ms | 673.87 ms |
+| RxJS manual continuation adapter | 2.44 ms | 2.54 ms | 9.50 ms |
+
+The RxJS comparison uses the published library and implements three alternatives:
+
+- **Observable sequencing:** `defer` creates cold write operations and `expand`
+  with concurrency one requests the next write after completion. The layered
+  form has nested three-write record flows. This avoids a synchronous
+  `range`/`concatMap` source enqueuing the entire workload during a flush.
+- **Pending checks:** calls each write directly, then selects `from(pending)`
+  for a flush or `EMPTY` for synchronous completion, avoiding a per-write
+  `defer` wrapper while retaining RxJS sequencing.
+- **Manual adapter:** `defer` wraps the existing hand-written synchronous
+  continuation algorithm. This is a competitive library baseline but retains
+  the explicit resume code; it is not an operator-sequencing result.
+
+`defaultIfEmpty` advances completion-only operations, and `ignoreElements` makes
+only overall completion significant. `observeOn(queueScheduler)` prevents
+recursive stack growth after suspension. Without a delay, that scheduler runs
+synchronously: it adds neither a native microtask nor a timer to plain writes.
+Its scheduling and subscription costs are included in the measurements.
+
+The harness constructs and subscribes each flow once **inside the timer** and
+consumes its `complete`/`error` notifications. It returns inline on synchronous
+completion and allocates a native waiting Promise only if pending. Unconditionally
+using `firstValueFrom` or `lastValueFrom` would conceal this capability. Native
+flush promises, buffer sizes, stored bytes, and output validation are unchanged.
+
+The shared comparison suite now passes **48 tests**, including completion modes,
+ordered writes, repeated flush backpressure, synchronous failures and rejected
+flushes, and lazy subscription entry. Four RxJS cases process 15,000 writes after
+an initial suspension to check stack safety. All 66 timed cases contain 27 samples.
+
+These are different API contracts: conditional functions start at the call;
+RxJS Observables and LazyPromise flows start at subscription. Library errors
+are delivered through error/rejection notifications; the harness converts these
+to throw/reject solely for uniform consumption. RxJS supports multiple emissions
+and rich stream operators; those features, cancellation, memory usage, and
+resubscription are outside this benchmark. Unsubscribing from a Promise-backed
+Observable does not cancel its underlying native file write. The operator flows
+perform additional per-write work; that structural observation is not a CPU
+profile or a general claim about RxJS performance.
+
+**Variation is substantial.** No samples were discarded. For layered memory,
+ordinary async/await ranges from 24.59 to 1,171.85 ms, conditional functions from
+5.04 to 9.98 ms, and RxJS Observable sequencing from 767.43 to 9,083.22 ms.
+Pooled medians describe this synthetic shared-environment batch, not statistical
+confidence or universal speedups. File writes omit `fsync` and may use OS caches.
+Benchmark a real application before choosing syntax or a library from these results.
+
+- [RxJS implementations](tools/benchmarks/conditional-async/rx-writers.mjs),
+  [comparison tests](tools/benchmarks/conditional-async/comparison.test.mjs), and
+  [reproduction commands](tools/benchmarks/conditional-async/README.md#rxjs-comparison).
+- [Run 1](tools/benchmarks/conditional-async/rxjs-run-1.json),
+  [run 2](tools/benchmarks/conditional-async/rxjs-run-2.json),
+  [run 3](tools/benchmarks/conditional-async/rxjs-run-3.json), and
+  [pooled medians, full ranges, and sample counts](tools/benchmarks/conditional-async/rxjs-summary.json).
+- Primary references: [expand](https://rxjs.dev/api/index/function/expand),
+  [defer](https://rxjs.dev/api/index/function/defer),
+  [queueScheduler](https://rxjs.dev/api/index/const/queueScheduler), and
+  [RxJS 7.8.2 source](https://github.com/ReactiveX/rxjs/tree/7.8.2).
+
 ## LazyPromise comparison
+
+This earlier eight-strategy batch predates the RxJS comparison above.
 
 The comparison uses the same 100,000 records / 300,000 writes / 4.8 MB workload,
 with all eight strategies measured together: three fresh processes, nine samples
@@ -63,7 +149,8 @@ within a batch rather than attributing cross-batch differences to implementation
 | LazyPromise generator + pending checks | 3.05 ms | 4.09 ms | 9.37 ms |
 | LazyPromise manual continuation adapter | 2.15 ms | 2.30 ms | 7.46 ms |
 
-The layered table is in the summary above. Each trial checks byte counts, flush
+The full layered results for this eight-strategy batch are in the linked summary
+JSON. The latest summary above also includes RxJS. Each trial checks byte counts, flush
 counts, buffer reuse, and stored output. Tests also compare synchronous completion,
 ordering through repeated asynchronous flushes, and failures before/after suspension.
 
@@ -108,7 +195,7 @@ Sources and reproducibility:
   [generator syntax](https://lazypromise.com/generator-syntax/), and
   [native Promise interop](https://lazypromise.com/interop-with-native-promises/).
 - [Comparison implementations](tools/benchmarks/conditional-async/lazy-writers.mjs),
-  [25 behavioral tests](tools/benchmarks/conditional-async/comparison.test.mjs), and
+  [shared behavioral tests](tools/benchmarks/conditional-async/comparison.test.mjs), and
   [installation and reproduction commands](tools/benchmarks/conditional-async/README.md#lazypromise-comparison).
 - [Run 1](tools/benchmarks/conditional-async/lazypromise-run-1.json),
   [run 2](tools/benchmarks/conditional-async/lazypromise-run-2.json),

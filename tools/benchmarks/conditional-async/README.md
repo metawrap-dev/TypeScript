@@ -1,6 +1,6 @@
 # Buffered-write benchmark
 
-This benchmark compares eight spellings/implementations of the same ordered
+This benchmark compares eleven spellings/implementations of the same ordered
 buffer writes, compiled by the fork to ES2022 CommonJS and run on Node:
 
 1. Ordinary `async` with an unconditional `await` at every write.
@@ -11,6 +11,9 @@ buffer writes, compiled by the fork to ES2022 CommonJS and run on Node:
 6. LazyPromise `fromGen` / `yield* fromEager` at every write.
 7. LazyPromise generators with explicit pending checks before yielding.
 8. LazyPromise `fromEager` around the hand-written continuation strategy.
+9. RxJS deferred Observable writes sequenced with `expand`.
+10. RxJS `expand` with direct pending-value checks.
+11. RxJS `defer` around the hand-written continuation strategy.
 
 The manual checks rely on this benchmark's precise `void | Promise<void>`
 contract. They do not implement the generic thenable probing of `await?`.
@@ -166,3 +169,44 @@ No general Promise/A+ or library conformance claim is made.
 
 `lazypromise-run-{1,2,3}.json` and `lazypromise-summary.json` contain the new
 same-batch measurements (27 samples per case); previous batches remain intact.
+
+## RxJS comparison
+
+The isolated benchmark package also pins **RxJS 7.8.2**. Install with the same
+`npm ci --ignore-scripts --prefix tools/benchmarks/conditional-async` command.
+Use the existing reproduction commands with `rxjs-run-N.json` paths and pass
+all three runs to `summarize.mjs` to produce `rxjs-summary.json`. All eleven
+strategies, including LazyPromise, run in each process; earlier batches are
+retained. The comparison test command now runs 48 tests.
+
+[rx-writers.mjs](rx-writers.mjs) uses `defer` and `expand` (concurrency one) to
+request each write only after the previous completion. Unlike a synchronous
+`range(...).pipe(concatMap(...))` source, this does not eagerly enqueue the entire
+remaining workload during the first asynchronous flush. Layered records use
+nested three-step Observable flows. A second variant directly checks for a
+pending return before choosing `from(pending)` or `EMPTY`, avoiding the per-write
+`defer` wrapper. Both still use RxJS sequencing. A third variant wraps the same
+manual continuation algorithm as the LazyPromise manual adapter.
+
+`defaultIfEmpty` advances steps that complete without a value; `ignoreElements`
+makes the result a completion-only Observable. `observeOn(queueScheduler)`
+trampolines step notifications to prevent recursive stack growth. Without a
+specified delay, this scheduler executes synchronously; no microtask or timer
+is added to plain writes. Its bookkeeping cost is included in the measurement.
+Tests verify 15,000 ordered writes after an initial suspension as well as
+completion, failures, repeated flushes, and lazy subscription entry.
+
+The harness constructs each flow and subscribes once inside the timer, consuming
+`complete`/`error` rather than only `next`. It returns inline for synchronous
+completion and creates a native waiting Promise only while pending. It does not
+use `firstValueFrom`/`lastValueFrom` unconditionally, which would erase that
+observable completion distinction. Sink errors are converted to throw/reject by
+the test adapter for uniform comparison; this is not RxJS's own throwing contract.
+Observable cancellation, multiple emissions, operators for other workloads, and
+memory usage are outside the comparison. In particular, unsubscribing from a
+Promise-backed Observable does not cancel the underlying native file write.
+
+Primary API references: [expand](https://rxjs.dev/api/index/function/expand),
+[defer](https://rxjs.dev/api/index/function/defer),
+[queueScheduler](https://rxjs.dev/api/index/const/queueScheduler), and
+[RxJS source](https://github.com/ReactiveX/rxjs/tree/7.8.2).
