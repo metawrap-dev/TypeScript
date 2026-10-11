@@ -6,9 +6,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { lazyGenerator, layeredLazyGenerator, lazyCheckedGenerator, layeredLazyCheckedGenerator, lazyManualAdapter, consumeLazy } from './lazy-writers.mjs';
+import { lazyGenerator, layeredLazyGenerator, lazyCheckedGenerator, layeredLazyCheckedGenerator, layeredLazyOperators, lazyManualAdapter, consumeLazy } from './lazy-writers.mjs';
 
-import { rxExpand, layeredRxExpand, rxCheckedExpand, layeredRxCheckedExpand, rxManualAdapter, consumeObservable } from './rx-writers.mjs';
+import { rxExpand, layeredRxExpand, rxCheckedExpand, layeredRxCheckedExpand, layeredRxConcat, rxManualAdapter, consumeObservable } from './rx-writers.mjs';
 
 assert.ok(process.env.TSGO_BINARY, 'Set TSGO_BINARY to the built fork compiler');
 const dir = mkdtempSync(path.join(os.tmpdir(), 'conditional-lazy-test-'));
@@ -26,6 +26,10 @@ for (const layout of ['flat', 'layered']) {
         ['RxJS expand', (buffer, records) => consumeObservable((layout === 'flat' ? rxExpand : layeredRxExpand)(buffer, records))],
         ['RxJS checked expand', (buffer, records) => consumeObservable((layout === 'flat' ? rxCheckedExpand : layeredRxCheckedExpand)(buffer, records))],
         ['RxJS manual adapter', (buffer, records) => consumeObservable(rxManualAdapter(manual)(buffer, records))],
+        ...(layout === 'layered' ? [
+            ['LazyPromise operators', (buffer, records) => consumeLazy(layeredLazyOperators(buffer, records))],
+            ['RxJS concat records', (buffer, records) => consumeObservable(layeredRxConcat(buffer, records))],
+        ] : []),
     ];
     for (const [name, fn] of strategies) {
         test(`${layout}/${name}: synchronous completion and ordered writes`, () => {
@@ -84,7 +88,7 @@ test('LazyPromise defers execution until subscribed; conditional starts at the c
     assert.deepEqual(values, [0, 1, 2]);
 });
 
-for (const fn of [rxExpand, layeredRxExpand, rxCheckedExpand, layeredRxCheckedExpand]) {
+for (const fn of [rxExpand, layeredRxExpand, rxCheckedExpand, layeredRxCheckedExpand, layeredRxConcat]) {
     test(`${fn.name}: runs a long synchronous suffix after suspension`, async () => {
         let next = 0;
         const result = consumeObservable(fn({ write(value) {
