@@ -1,4 +1,4 @@
-import { EMPTY, defaultIfEmpty, defer, expand, from, ignoreElements, map, observeOn, of, queueScheduler } from 'rxjs';
+import { EMPTY, concat, defaultIfEmpty, defer, expand, from, ignoreElements, map, observeOn, of, queueScheduler } from 'rxjs';
 
 // queueScheduler is synchronous. Trampoline step notifications so a long run
 // of synchronous writes after a flush does not grow the JavaScript call stack.
@@ -34,6 +34,13 @@ export function rxCheckedExpand(buffer, records) {
 }
 export function layeredRxCheckedExpand(buffer, records) {
     return sequence(records, i => recordObservable(buffer, i, true), false);
+}
+export function layeredRxConcat(buffer, records) {
+    return sequence(records, i => concat(
+        writeObservable(buffer, i * 3),
+        writeObservable(buffer, i * 3 + 1),
+        writeObservable(buffer, i * 3 + 2),
+    ).pipe(ignoreElements()), false);
 }
 export function rxManualAdapter(manual) {
     return (buffer, records) => defer(() => completionObservable(manual(buffer, records)));

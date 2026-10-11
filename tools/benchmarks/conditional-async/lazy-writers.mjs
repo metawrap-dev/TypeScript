@@ -20,6 +20,17 @@ export function layeredLazyGenerator(buffer, records) {
     });
 }
 
+function lazyRecordOperators(buffer, i) {
+    return fromEager(() => buffer.write(i * 3))
+        .map(() => fromEager(() => buffer.write(i * 3 + 1)))
+        .map(() => fromEager(() => buffer.write(i * 3 + 2)));
+}
+export function layeredLazyOperators(buffer, records) {
+    return fromGen(function* () {
+        for (let i = 0; i < records; i++) yield* lazyRecordOperators(buffer, i);
+    });
+}
+
 // Also measure a library adapter around the existing hand-optimized continuation
 // workload. This retains manual bookkeeping; it is not the generator syntax.
 export function lazyManualAdapter(manual) {

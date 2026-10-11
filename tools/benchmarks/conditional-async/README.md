@@ -220,3 +220,49 @@ Primary API references: [expand](https://rxjs.dev/api/index/function/expand),
 [defer](https://rxjs.dev/api/index/function/defer),
 [queueScheduler](https://rxjs.dev/api/index/const/queueScheduler), and
 [RxJS source](https://github.com/ReactiveX/rxjs/tree/7.8.2).
+
+## Library-only screening comparison
+
+Run the additional correctness checks and a short, same-process comparison:
+
+```sh
+node --test tools/benchmarks/conditional-async/library-comparison.test.mjs
+BENCH_LIBRARIES=1 node --test tools/benchmarks/conditional-async/library-comparison.test.mjs
+```
+
+This does not require the fork compiler. It compares the existing layered
+library strategies with two experimental variants using the pinned dependencies:
+
+- **LazyPromise operators:** retain the outer generator, but replace each
+  three-write record generator with `fromEager` and two flattening `.map` calls.
+- **RxJS concat records:** replace each record's inner `expand` with `concat`
+  of three deferred write Observables. Every write retains RxJS sequencing and
+  backpressure. The outer `expand` and scheduler trampoline are unchanged;
+  record boundaries are preserved. The earlier manual-loop batching experiment
+  has been removed.
+
+The screening uses 100,000 records, the same four DataView fields per write,
+memory and 64 KiB microtask scenarios, three warmups, nine timed samples, and
+rotating strategy order. It checks ordering, completion, flush counts, and
+backpressure. It omits file I/O and compiler strategies and adds per-write
+ordering assertions, so compare variants within this run, not absolute timings
+against the archived full-benchmark results. The original runner and result
+files are unchanged. Correctness checks also cover synchronous completion,
+repeated suspension, long synchronous suffixes, and throw/rejection propagation.
+
+One screening run on 2026-10-11, Node v22.20.0, macOS arm64, produced these
+medians (milliseconds). These are preliminary single-process measurements:
+
+| Strategy | Memory | Microtask |
+| --- | ---: | ---: |
+| LazyPromise generator | 74.90 | 75.41 |
+| LazyPromise checked generator | 50.90 | 50.97 |
+| LazyPromise operators | 30.54 | 31.23 |
+| RxJS expand | 322.80 | 321.41 |
+| RxJS checked expand | 309.60 | 308.90 |
+| RxJS concat records | 134.43 | 133.40 |
+
+Concat records were about 2.4 times faster than nested expand in this run,
+without bypassing per-write Observable sequencing or removing record boundaries.
+This changes several inner operators, not just scheduling, and does not isolate
+the scheduler's cost.
