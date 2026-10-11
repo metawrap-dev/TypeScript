@@ -1,0 +1,359 @@
+{
+  "processes": 3,
+  "records": 100000,
+  "writes": 300000,
+  "bytes": 4800000,
+  "rows": [
+    {
+      "layout": "layered",
+      "mode": "memory",
+      "strategy": "ordinary async + await",
+      "samples": 27,
+      "medianMs": 20.434957999999824,
+      "minMs": 19.516945999999734,
+      "maxMs": 23.54157099999975
+    },
+    {
+      "layout": "layered",
+      "mode": "memory",
+      "strategy": "ordinary async + manual checks",
+      "samples": 27,
+      "medianMs": 7.336112000000867,
+      "minMs": 6.677161999999953,
+      "maxMs": 9.05415499999981
+    },
+    {
+      "layout": "layered",
+      "mode": "memory",
+      "strategy": "ordinary async + await?",
+      "samples": 27,
+      "medianMs": 17.55178900000101,
+      "minMs": 16.361211000003095,
+      "maxMs": 24.128802999999607
+    },
+    {
+      "layout": "layered",
+      "mode": "memory",
+      "strategy": "async? + await?",
+      "samples": 27,
+      "medianMs": 3.94648000000052,
+      "minMs": 3.494280000000799,
+      "maxMs": 5.507058000000143
+    },
+    {
+      "layout": "layered",
+      "mode": "memory",
+      "strategy": "manual sync continuation",
+      "samples": 27,
+      "medianMs": 3.003757999998925,
+      "minMs": 2.2732490000016696,
+      "maxMs": 4.68444400000044
+    },
+    {
+      "layout": "layered",
+      "mode": "memory",
+      "strategy": "LazyPromise generator",
+      "samples": 27,
+      "medianMs": 146.1650069999996,
+      "minMs": 137.4559079999999,
+      "maxMs": 195.2596510000003
+    },
+    {
+      "layout": "layered",
+      "mode": "memory",
+      "strategy": "LazyPromise checked generator",
+      "samples": 27,
+      "medianMs": 106.99937999999929,
+      "minMs": 99.43864399999984,
+      "maxMs": 128.87219600000026
+    },
+    {
+      "layout": "layered",
+      "mode": "memory",
+      "strategy": "LazyPromise manual adapter",
+      "samples": 27,
+      "medianMs": 3.4899229999991803,
+      "minMs": 2.3331880000005185,
+      "maxMs": 19.00901099999828
+    },
+    {
+      "layout": "layered",
+      "mode": "memory",
+      "strategy": "RxJS expand",
+      "samples": 27,
+      "medianMs": 661.7158800000016,
+      "minMs": 633.0259389999992,
+      "maxMs": 738.9748729999992
+    },
+    {
+      "layout": "layered",
+      "mode": "memory",
+      "strategy": "RxJS checked expand",
+      "samples": 27,
+      "medianMs": 634.2698560000008,
+      "minMs": 595.7751880000005,
+      "maxMs": 706.8394549999975
+    },
+    {
+      "layout": "layered",
+      "mode": "memory",
+      "strategy": "RxJS manual adapter",
+      "samples": 27,
+      "medianMs": 2.829517999998643,
+      "minMs": 2.326076000001194,
+      "maxMs": 5.433883000001515
+    },
+    {
+      "layout": "layered",
+      "mode": "memory",
+      "strategy": "LazyPromise operators",
+      "samples": 27,
+      "medianMs": 29.47306899999967,
+      "minMs": 26.994286999997712,
+      "maxMs": 40.368163999999524
+    },
+    {
+      "layout": "layered",
+      "mode": "memory",
+      "strategy": "RxJS concat records",
+      "samples": 27,
+      "medianMs": 276.40035799999896,
+      "minMs": 259.22987699999976,
+      "maxMs": 307.73184200000105
+    },
+    {
+      "layout": "layered",
+      "mode": "microtask",
+      "strategy": "ordinary async + await",
+      "samples": 27,
+      "medianMs": 20.85098100000323,
+      "minMs": 19.749142000000575,
+      "maxMs": 36.83825600000273
+    },
+    {
+      "layout": "layered",
+      "mode": "microtask",
+      "strategy": "ordinary async + manual checks",
+      "samples": 27,
+      "medianMs": 7.277217000002565,
+      "minMs": 6.64701100000093,
+      "maxMs": 10.160841000004439
+    },
+    {
+      "layout": "layered",
+      "mode": "microtask",
+      "strategy": "ordinary async + await?",
+      "samples": 27,
+      "medianMs": 17.735870999997132,
+      "minMs": 16.395032000000356,
+      "maxMs": 24.169993999996223
+    },
+    {
+      "layout": "layered",
+      "mode": "microtask",
+      "strategy": "async? + await?",
+      "samples": 27,
+      "medianMs": 4.4698629999984405,
+      "minMs": 3.5825200000035693,
+      "maxMs": 6.829748999996809
+    },
+    {
+      "layout": "layered",
+      "mode": "microtask",
+      "strategy": "manual sync continuation",
+      "samples": 27,
+      "medianMs": 3.0074900000035996,
+      "minMs": 2.855689000003622,
+      "maxMs": 4.954120000002149
+    },
+    {
+      "layout": "layered",
+      "mode": "microtask",
+      "strategy": "LazyPromise generator",
+      "samples": 27,
+      "medianMs": 144.2739139999976,
+      "minMs": 135.63452900000266,
+      "maxMs": 160.136262
+    },
+    {
+      "layout": "layered",
+      "mode": "microtask",
+      "strategy": "LazyPromise checked generator",
+      "samples": 27,
+      "medianMs": 108.01375199999893,
+      "minMs": 99.97826399999758,
+      "maxMs": 126.94818399999349
+    },
+    {
+      "layout": "layered",
+      "mode": "microtask",
+      "strategy": "LazyPromise manual adapter",
+      "samples": 27,
+      "medianMs": 4.539326999998593,
+      "minMs": 2.912066999997478,
+      "maxMs": 18.129571999998007
+    },
+    {
+      "layout": "layered",
+      "mode": "microtask",
+      "strategy": "RxJS expand",
+      "samples": 27,
+      "medianMs": 689.1374720000022,
+      "minMs": 649.5757729999968,
+      "maxMs": 732.4094590000022
+    },
+    {
+      "layout": "layered",
+      "mode": "microtask",
+      "strategy": "RxJS checked expand",
+      "samples": 27,
+      "medianMs": 652.2127340000006,
+      "minMs": 625.1752789999991,
+      "maxMs": 728.4785670000056
+    },
+    {
+      "layout": "layered",
+      "mode": "microtask",
+      "strategy": "RxJS manual adapter",
+      "samples": 27,
+      "medianMs": 3.0532939999975497,
+      "minMs": 2.873279999999795,
+      "maxMs": 5.14265599999635
+    },
+    {
+      "layout": "layered",
+      "mode": "microtask",
+      "strategy": "LazyPromise operators",
+      "samples": 27,
+      "medianMs": 30.826701999998477,
+      "minMs": 28.34706099999312,
+      "maxMs": 36.16924899999867
+    },
+    {
+      "layout": "layered",
+      "mode": "microtask",
+      "strategy": "RxJS concat records",
+      "samples": 27,
+      "medianMs": 279.0990380000003,
+      "minMs": 268.38086900000053,
+      "maxMs": 319.7638680000018
+    },
+    {
+      "layout": "layered",
+      "mode": "file",
+      "strategy": "ordinary async + await",
+      "samples": 27,
+      "medianMs": 28.743523999997706,
+      "minMs": 25.68443500000285,
+      "maxMs": 38.511036000003514
+    },
+    {
+      "layout": "layered",
+      "mode": "file",
+      "strategy": "ordinary async + manual checks",
+      "samples": 27,
+      "medianMs": 13.056126999996195,
+      "minMs": 11.360046000001603,
+      "maxMs": 21.48371500000212
+    },
+    {
+      "layout": "layered",
+      "mode": "file",
+      "strategy": "ordinary async + await?",
+      "samples": 27,
+      "medianMs": 24.994143000003533,
+      "minMs": 21.989101999992272,
+      "maxMs": 37.61274300000514
+    },
+    {
+      "layout": "layered",
+      "mode": "file",
+      "strategy": "async? + await?",
+      "samples": 27,
+      "medianMs": 10.150762000004761,
+      "minMs": 8.241386000001512,
+      "maxMs": 20.83450299999822
+    },
+    {
+      "layout": "layered",
+      "mode": "file",
+      "strategy": "manual sync continuation",
+      "samples": 27,
+      "medianMs": 10.051365999999689,
+      "minMs": 7.44558600000164,
+      "maxMs": 15.599818000002415
+    },
+    {
+      "layout": "layered",
+      "mode": "file",
+      "strategy": "LazyPromise generator",
+      "samples": 27,
+      "medianMs": 160.93871800000488,
+      "minMs": 144.85413100000005,
+      "maxMs": 202.94011599999794
+    },
+    {
+      "layout": "layered",
+      "mode": "file",
+      "strategy": "LazyPromise checked generator",
+      "samples": 27,
+      "medianMs": 121.25660800000333,
+      "minMs": 111.05659100000048,
+      "maxMs": 138.85625199999777
+    },
+    {
+      "layout": "layered",
+      "mode": "file",
+      "strategy": "LazyPromise manual adapter",
+      "samples": 27,
+      "medianMs": 15.438876000000164,
+      "minMs": 7.402928000003158,
+      "maxMs": 24.82082999999693
+    },
+    {
+      "layout": "layered",
+      "mode": "file",
+      "strategy": "RxJS expand",
+      "samples": 27,
+      "medianMs": 723.0936269999947,
+      "minMs": 672.1358689999979,
+      "maxMs": 824.5324519999995
+    },
+    {
+      "layout": "layered",
+      "mode": "file",
+      "strategy": "RxJS checked expand",
+      "samples": 27,
+      "medianMs": 672.2303780000002,
+      "minMs": 644.557077999998,
+      "maxMs": 750.5992260000057
+    },
+    {
+      "layout": "layered",
+      "mode": "file",
+      "strategy": "RxJS manual adapter",
+      "samples": 27,
+      "medianMs": 9.455732999995234,
+      "minMs": 7.551695000001928,
+      "maxMs": 19.524554000003263
+    },
+    {
+      "layout": "layered",
+      "mode": "file",
+      "strategy": "LazyPromise operators",
+      "samples": 27,
+      "medianMs": 39.45737899999949,
+      "minMs": 34.768120000000636,
+      "maxMs": 49.82371399999829
+    },
+    {
+      "layout": "layered",
+      "mode": "file",
+      "strategy": "RxJS concat records",
+      "samples": 27,
+      "medianMs": 298.88459200000216,
+      "minMs": 279.86804900000425,
+      "maxMs": 343.0774780000065
+    }
+  ]
+}

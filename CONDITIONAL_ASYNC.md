@@ -10,7 +10,138 @@ completion through the calling layers, returning a Promise only when needed.
 
 **Latest measurements — layered buffered writer:** 100,000 records, 300,000
 writes, 4.8 MB; pooled medians of 27 samples across three fresh Node processes.
-The same latest batch is used for every entry. Lower times are better.
+The same PR #1 follow-up batch is used for every entry, including the original
+implementations. Lower times are better.
+
+| Implementation | Memory, no flush | Microtask flushes | File writes |
+| --- | ---: | ---: | ---: |
+| ordinary `async` + `await` | 20.43 ms | 20.85 ms | 28.74 ms |
+| ordinary `async` + manual checks | 7.34 ms | 7.28 ms | 13.06 ms |
+| ordinary `async` + `await?` | 17.55 ms | 17.74 ms | 24.99 ms |
+| **`async?` + `await?`** | 3.95 ms | 4.47 ms | 10.15 ms |
+| manual synchronous continuations | 3.00 ms | 3.01 ms | 10.05 ms |
+| LazyPromise generator | 146.17 ms | 144.27 ms | 160.94 ms |
+| LazyPromise generator + pending checks | 107.00 ms | 108.01 ms | 121.26 ms |
+| LazyPromise manual continuation adapter | 3.49 ms | 4.54 ms | 15.44 ms |
+| RxJS Observable sequencing (`expand`) | 661.72 ms | 689.14 ms | 723.09 ms |
+| RxJS sequencing + pending checks | 634.27 ms | 652.21 ms | 672.23 ms |
+| RxJS manual continuation adapter | 2.83 ms | 3.05 ms | 9.46 ms |
+| **LazyPromise operators (PR #1)** | 29.47 ms | 30.83 ms | 39.46 ms |
+| **RxJS concat records (PR #1)** | 276.40 ms | 279.10 ms | 298.88 ms |
+
+**Adapter baseline only:** The RxJS and LazyPromise manual continuation adapters
+just measure the baseline overhead of wrapping an already optimized manual
+continuation strategy in the library. The manual writer sequences every write;
+the library wraps the whole workload once at the invocation/completion boundary.
+These rows do **not** measure sequencing the writes with RxJS operators or
+LazyPromise generators, and do not remove the manual continuation boilerplate.
+The reported times include the underlying writer, not just library overhead;
+comparison with the bare manual baseline gives only a noisy estimate of that
+added overhead. "Optimized" refers to our hand-optimized benchmark baseline,
+not a proof that no faster implementation is possible.
+
+This batch includes **RxJS 7.8.2** and **`@lazy-promise/core` 0.0.46**.
+[PR #1](https://github.com/metawrap-dev/TypeScript/pull/1), contributed by
+`ivan7237d`, substantially reduces library sequencing overhead using LazyPromise
+operators and RxJS concat records. The supported direct-continuation compiler
+output is still faster for this tiny-write workload. Both libraries preserve
+synchronous completion; the manual adapters retain their hand-written sequencing.
+These measurements do not establish a universal winner or require new syntax to
+achieve synchronous completion.
+
+Supported short sequences and `for` loops create continuation callbacks only
+when they suspend; larger sequences use shared callbacks, and complex bodies
+retain a generator fallback. This is a working prototype, **not an ECMAScript
+standard or an upstream TypeScript feature**.
+
+Measured on Node v24.19.0 / Linux x64 / AMD EPYC 9V74, targeting ES2022,
+on 2026-10-11. This host differs from the archived Intel runs. These synthetic
+results vary in a shared environment; file writes omit `fsync`. They do not
+predict native-engine performance or establish statistical equivalence. See
+[the PR #1 analysis and full results](#pr-1-library-operator-improvements)
+for implementation details, raw samples, ranges, and limitations. The latest
+batch measures only the layered layout that the PR changes; the flat layout
+remains in the archived comparison below.
+
+## PR #1: library operator improvements
+
+[Merged PR #1](https://github.com/metawrap-dev/TypeScript/pull/1) adds two
+library sequencing variants without changing the compiler, buffer contract,
+native flush promises, or pinned dependencies. These are not manual-continuation
+adapters: the libraries still sequence every write.
+
+**LazyPromise operators:** the outer record generator remains, but each inner
+three-write generator becomes `fromEager(write0).map(write1).map(write2)`; each
+map callback returns another `fromEager` operation. LazyPromise flattens these
+returned operations, so the next write waits for the previous completion.
+This removes the inner generator and its per-write yield/resume transitions.
+The three eager-interop wrappers and two map operators still do work. The
+structural explanation suggests where overhead is reduced; this run is not an
+allocation or CPU profile. See [the implementation](tools/benchmarks/conditional-async/lazy-writers.mjs).
+
+**RxJS concat records:** each inner three-step `expand` becomes `concat` over
+three deferred write Observables, followed by `ignoreElements`. `concat`
+subscribes to the next write only when the current one completes. The outer
+record `expand`, its synchronous `queueScheduler` trampoline, and the record
+boundaries remain. This removes the inner expansion's index advancement,
+`defaultIfEmpty`, `map`, and `observeOn` steps per write. The result does not
+isolate scheduling alone: several inner operators changed. See [the implementation](tools/benchmarks/conditional-async/rx-writers.mjs).
+
+Compared with their original flows **within this new batch**, the ratios of
+pooled median times (memory / microtask / file) are:
+
+- LazyPromise generator to operators: **4.96× / 4.68× / 4.08×**.
+- LazyPromise checked generator to operators: **3.63× / 3.50× / 3.07×**.
+- RxJS nested expand to concat records: **2.39× / 2.47× / 2.42×**.
+- RxJS checked expand to concat records: **2.29× / 2.34× / 2.25×**.
+
+The summary table above reports all thirteen strategies from this same batch.
+We reran the existing strategies rather than combining the author's macOS/Node
+22 screening medians or our older Intel-host measurements with these results.
+The author's separate screening table remains in the
+[benchmark README](tools/benchmarks/conditional-async/README.md#library-only-screening-comparison).
+
+The workload is unchanged: 100,000 three-write records / 300,000 writes / 4.8 MB;
+three sequential fresh Node processes, three warmups and nine retained samples
+per strategy/scenario/process, with rotating order. All 39 layered cases have
+27 samples. The original shared buffer, microtask flushes, file sink, final drain,
+and verification remain in the full harness. File contents are checked outside
+timing; no `fsync` is requested. All three new-run reports record benchmark
+source commit `32a6de3e130389423a364836338962f9f879d7f0`; the compiler was rebuilt
+from the merged PR tree, whose compiler sources are unchanged by this PR.
+
+The combined comparison suites pass **73 correctness checks** (the optional
+screening benchmark is skipped unless explicitly enabled). Both new variants
+preserve inline completion, ordered writes, repeated-flush backpressure, and
+throw/rejection propagation without subsequent writes. The tests also exercise
+15,000 writes after an initial suspension. Every timed trial validates counts,
+flushes, final completion and bytes; the memory and file scenarios check stored
+ordering. This does not benchmark browser scheduling, cancellation, resubscription,
+tracing, dependency injection, or memory usage.
+
+There is still shared-host variation. For memory, `async?` ranges from
+3.49–5.51 ms, LazyPromise operators from 26.99–40.37 ms,
+and RxJS concat records from 259.23–307.73 ms. Ratios of pooled
+medians are descriptive, not confidence bounds or universal speedups.
+
+- [Run 1](tools/benchmarks/conditional-async/pr1-run-1.json),
+  [run 2](tools/benchmarks/conditional-async/pr1-run-2.json),
+  [run 3](tools/benchmarks/conditional-async/pr1-run-3.json), and
+  [pooled medians and full ranges](tools/benchmarks/conditional-async/pr1-summary.json).
+- [Reproduce this batch](tools/benchmarks/conditional-async/README.md#pr-1-full-harness-follow-up).
+
+## RxJS and LazyPromise comparison
+
+This is the archived eleven-strategy batch from before PR #1. The latest
+layered measurements are above; the following flat measurements have not been
+rerun for PR #1, which changes only three-write record flows.
+
+All **eleven original strategies** were measured together on the same workload:
+100,000 records, 300,000 small writes, 4.8 MB; three fresh Node processes, three
+warmups and nine samples per case in each, with rotated strategy order. No
+compiler changes were made for this batch. Earlier batches remain below.
+
+**Archived layered writer — pooled medians:**
 
 | Implementation | Memory, no flush | Microtask flushes | File writes |
 | --- | ---: | ---: | ---: |
@@ -26,43 +157,7 @@ The same latest batch is used for every entry. Lower times are better.
 | RxJS sequencing + pending checks | 877.57 ms | 874.03 ms | 901.72 ms |
 | RxJS manual continuation adapter | 4.58 ms | 4.35 ms | 12.06 ms |
 
-**Adapter baseline only:** The RxJS and LazyPromise manual continuation adapters
-just measure the baseline overhead of wrapping an already optimized manual
-continuation strategy in the library. The manual writer sequences every write;
-the library wraps the whole workload once at the invocation/completion boundary.
-These rows do **not** measure sequencing the writes with RxJS operators or
-LazyPromise generators, and do not remove the manual continuation boilerplate.
-The reported times include the underlying writer, not just library overhead;
-comparison with the bare manual baseline gives only a noisy estimate of that
-added overhead. "Optimized" refers to our hand-optimized benchmark baseline,
-not a proof that no faster implementation is possible.
-
-This batch includes **RxJS 7.8.2** and **`@lazy-promise/core` 0.0.46**.
-Their operator/generator flows are slower than the supported direct-continuation
-compiler output for these tiny writes. Both libraries can preserve synchronous
-completion; RxJS's manual continuation adapter has a similar in-memory median
-to the bare manual baseline, while retaining the manual sequencing code. This
-does not establish a universal winner or require new syntax to achieve synchronous completion.
-
-Supported short sequences and `for` loops create continuation callbacks only
-when they suspend; larger sequences use shared callbacks, and complex bodies
-retain a generator fallback. This is a working prototype, **not an ECMAScript
-standard or an upstream TypeScript feature**.
-
-Measured on Node v24.19.0, targeting ES2022, on 2026-10-10. These synthetic
-results vary in a shared environment; file writes omit `fsync`. They do not
-predict native-engine performance or establish statistical equivalence. See
-[the full latest results and tradeoffs](#rxjs-and-lazypromise-comparison)
-for both layouts, earlier comparisons, raw samples, and limitations.
-
-## RxJS and LazyPromise comparison
-
-All **eleven strategies** above were measured together on the same workload:
-100,000 records, 300,000 small writes, 4.8 MB; three fresh Node processes, three
-warmups and nine samples per case in each, with rotated strategy order. No
-compiler changes were made for this batch. Earlier batches remain below.
-
-**Flat writer — pooled medians:**
+**Archived flat writer — pooled medians:**
 
 | Implementation | Memory, no flush | Microtask flushes | File writes |
 | --- | ---: | ---: | ---: |
@@ -108,7 +203,8 @@ completion and allocates a native waiting Promise only if pending. Unconditional
 using `firstValueFrom` or `lastValueFrom` would conceal this capability. Native
 flush promises, buffer sizes, stored bytes, and output validation are unchanged.
 
-The shared comparison suite now passes **48 tests**, including completion modes,
+At the time of this archived batch, the shared comparison suite passed **48 tests**,
+including completion modes,
 ordered writes, repeated flush backpressure, synchronous failures and rejected
 flushes, and lazy subscription entry. Four RxJS cases process 15,000 writes after
 an initial suspension to check stack safety. All 66 timed cases contain 27 samples.

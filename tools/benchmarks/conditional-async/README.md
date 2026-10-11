@@ -1,7 +1,8 @@
 # Buffered-write benchmark
 
-This benchmark compares eleven spellings/implementations of the same ordered
-buffer writes, compiled by the fork to ES2022 CommonJS and run on Node:
+This benchmark compares thirteen spellings/implementations of the same ordered
+buffer writes in the layered layout (eleven in the flat layout), compiled by the
+fork to ES2022 CommonJS and run on Node:
 
 1. Ordinary `async` with an unconditional `await` at every write.
 2. Ordinary `async` with `const pending = write(...); if (pending) await pending`.
@@ -14,6 +15,8 @@ buffer writes, compiled by the fork to ES2022 CommonJS and run on Node:
 9. RxJS deferred Observable writes sequenced with `expand`.
 10. RxJS `expand` with direct pending-value checks.
 11. RxJS `defer` around the hand-written continuation strategy.
+12. LazyPromise operators for each three-write record (layered only, PR #1).
+13. RxJS `concat` for each three-write record (layered only, PR #1).
 
 The manual checks rely on this benchmark's precise `void | Promise<void>`
 contract. They do not implement the generic thenable probing of `await?`.
@@ -58,7 +61,9 @@ node tools/benchmarks/conditional-async/summarize.mjs results-run-1.json results
 ```
 
 `BENCH_RECORDS`, `BENCH_SAMPLES`, and `BENCH_WARMUPS` override the defaults
-100000, 9, and 3. The runner rotates strategy order each round. Each process
+100000, 9, and 3. `BENCH_LAYOUTS=layered` selects just the layered layout; omit
+it to run both layouts, or use `flat` to select the flat layout. The runner
+rotates strategy order each round. Each process
 warms up every strategy three times per scenario, then records nine timed
 samples. Three fresh processes produce 27 samples per strategy/scenario; the
 summary pools all samples and reports the median plus full min/max ranges.
@@ -266,3 +271,49 @@ Concat records were about 2.4 times faster than nested expand in this run,
 without bypassing per-write Observable sequencing or removing record boundaries.
 This changes several inner operators, not just scheduling, and does not isolate
 the scheduler's cost.
+
+## PR #1 full-harness follow-up
+
+PR #1 is merged. The full runner now includes LazyPromise operators and RxJS
+concat records alongside all eleven original strategies in the layered layout.
+The flat layout still has eleven strategies because these variants optimize
+three-write record functions. Consumer selection uses strategy names rather
+than positional indices, so the added LazyPromise variant is consumed through
+`consumeLazy` and the RxJS variant through `consumeObservable`.
+
+The combined correctness command passes 73 checks; the optional library-only
+screening benchmark is skipped by default:
+
+```sh
+TSGO_BINARY="$PWD/tsgo" node --test tools/benchmarks/conditional-async/comparison.test.mjs tools/benchmarks/conditional-async/library-comparison.test.mjs
+```
+
+Reproduce the latest layered-only batch, including file I/O and all thirteen
+strategies, from the repository root after installing dependencies and building
+the compiler as above:
+
+```sh
+TSGO_BINARY="$PWD/tsgo" BENCH_LAYOUTS=layered node tools/benchmarks/conditional-async/run.mjs tools/benchmarks/conditional-async/pr1-run-1.json
+TSGO_BINARY="$PWD/tsgo" BENCH_LAYOUTS=layered node tools/benchmarks/conditional-async/run.mjs tools/benchmarks/conditional-async/pr1-run-2.json
+TSGO_BINARY="$PWD/tsgo" BENCH_LAYOUTS=layered node tools/benchmarks/conditional-async/run.mjs tools/benchmarks/conditional-async/pr1-run-3.json
+node tools/benchmarks/conditional-async/summarize.mjs tools/benchmarks/conditional-async/pr1-run-{1,2,3}.json > tools/benchmarks/conditional-async/pr1-summary.json
+```
+
+[Run 1](pr1-run-1.json), [run 2](pr1-run-2.json), [run 3](pr1-run-3.json), and
+[the pooled summary](pr1-summary.json) contain 27 samples for each of 39 cases.
+Collected on 2026-10-11, Node v24.19.0 / V8 13.6.233.17-node.51, Linux x64,
+AMD EPYC 9V74, nine exposed logical CPUs; source commit
+`32a6de3e130389423a364836338962f9f879d7f0`. This is a different host from the
+archived Intel runs and from the author's macOS screening run. All existing
+strategies were measured again in the same new batch. The RFC's top table uses
+only these new layered measurements; older flat results remain archived.
+The full harness retains the existing buffer work and omits the screening's
+additional per-write ordering
+assertions from timing. Stored ordering is checked outside timing in memory
+and file trials, while the dedicated tests check every write during suspension.
+
+Within this batch, LazyPromise operators improve on the original generator's
+pooled medians by 4.96× / 4.68× / 4.08× and RxJS concat records improve on
+nested expand by 2.39× / 2.47× / 2.42× (memory / microtask / file).
+These ratios are descriptive and subject to shared-host variation. File writes
+still omit fsync; no browser, cancellation, or general-library ranking is implied.
